@@ -8,7 +8,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/nghyane/llm-mux/internal/misc"
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 )
 
 // ParseOpenAIRequest parses incoming OpenAI request from client into unified format.
@@ -86,7 +86,7 @@ func ParseOpenAIRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 				if req.Metadata == nil {
 					req.Metadata = make(map[string]any)
 				}
-				var gsValue interface{}
+				var gsValue any
 				if json.Unmarshal([]byte(gs.Raw), &gsValue) == nil {
 					req.Metadata["google_search"] = gsValue
 				}
@@ -126,7 +126,7 @@ func ParseOpenAIRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 	if rf := root.Get("response_format"); rf.Exists() {
 		if rf.Get("type").String() == "json_schema" {
 			if schema := rf.Get("json_schema.schema"); schema.Exists() {
-				var schemaMap map[string]interface{}
+				var schemaMap map[string]any
 				if json.Unmarshal([]byte(schema.Raw), &schemaMap) == nil {
 					req.ResponseSchema = schemaMap
 				}
@@ -143,7 +143,7 @@ func ParseOpenAIRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 		if req.Metadata == nil {
 			req.Metadata = make(map[string]any)
 		}
-		var logitBias map[string]interface{}
+		var logitBias map[string]any
 		if json.Unmarshal([]byte(v.Raw), &logitBias) == nil {
 			req.Metadata[ir.MetaOpenAILogitBias] = logitBias
 		}
@@ -627,14 +627,14 @@ func parseOpenAITool(t gjson.Result) *ir.ToolDefinition {
 		return nil
 	}
 
-	var params map[string]interface{}
+	var params map[string]any
 	if paramsResult.Exists() && paramsResult.IsObject() {
 		if json.Unmarshal([]byte(paramsResult.Raw), &params) == nil {
 			params = ir.CleanJsonSchema(params)
 		}
 	}
 	if params == nil {
-		params = make(map[string]interface{})
+		params = make(map[string]any)
 	}
 	return &ir.ToolDefinition{Name: name, Description: description, Parameters: params}
 }

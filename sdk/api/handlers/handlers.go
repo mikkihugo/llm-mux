@@ -1,6 +1,3 @@
-// Package handlers provides core API handler functionality for the CLI Proxy API server.
-// It includes common types, client management, load balancing, and error handling
-// shared across all API endpoint handlers (OpenAI, Claude, Gemini).
 package handlers
 
 import (
@@ -19,49 +16,22 @@ import (
 	"golang.org/x/net/context"
 )
 
-// ErrorResponse represents a standard error response format for the API.
-// It contains a single ErrorDetail field.
 type ErrorResponse struct {
-	// Error contains detailed information about the error that occurred.
 	Error ErrorDetail `json:"error"`
 }
 
-// ErrorDetail provides specific information about an error that occurred.
-// It includes a human-readable message, an error type, and an optional error code.
 type ErrorDetail struct {
-	// Message is a human-readable message providing more details about the error.
 	Message string `json:"message"`
-
-	// Type is the category of error that occurred (e.g., "invalid_request_error").
-	Type string `json:"type"`
-
-	// Code is a short code identifying the error, if applicable.
-	Code string `json:"code,omitempty"`
+	Type    string `json:"type"`
+	Code    string `json:"code,omitempty"`
 }
 
-// BaseAPIHandler contains the handlers for API endpoints.
-// It holds a pool of clients to interact with the backend service and manages
-// load balancing, client selection, and configuration.
 type BaseAPIHandler struct {
-	// AuthManager manages auth lifecycle and execution in the new architecture.
-	AuthManager *coreauth.Manager
-
-	// Cfg holds the current application configuration.
-	Cfg *config.SDKConfig
-
-	// OpenAICompatProviders is a list of provider names for OpenAI compatibility.
+	AuthManager           *coreauth.Manager
+	Cfg                   *config.SDKConfig
 	OpenAICompatProviders []string
 }
 
-// NewBaseAPIHandlers creates a new API handlers instance.
-// It takes a slice of clients and configuration as input.
-//
-// Parameters:
-//   - cliClients: A slice of AI service clients
-//   - cfg: The application configuration
-//
-// Returns:
-//   - *BaseAPIHandler: A new API handlers instance
 func NewBaseAPIHandlers(cfg *config.SDKConfig, authManager *coreauth.Manager, openAICompatProviders []string) *BaseAPIHandler {
 	return &BaseAPIHandler{
 		Cfg:                   cfg,
@@ -70,26 +40,10 @@ func NewBaseAPIHandlers(cfg *config.SDKConfig, authManager *coreauth.Manager, op
 	}
 }
 
-// UpdateClients updates the handlers' client list and configuration.
-// This method is called when the configuration or authentication tokens change.
-//
-// Parameters:
-//   - clients: The new slice of AI service clients
-//   - cfg: The new application configuration
 func (h *BaseAPIHandler) UpdateClients(cfg *config.SDKConfig) { h.Cfg = cfg }
 
-// GetAlt extracts the 'alt' parameter from the request query string.
-// It checks both 'alt' and '$alt' parameters and returns the appropriate value.
-//
-// Parameters:
-//   - c: The Gin context containing the HTTP request
-//
-// Returns:
-//   - string: The alt parameter value, or empty string if it's "sse"
 func (h *BaseAPIHandler) GetAlt(c *gin.Context) string {
-	var alt string
-	var hasAlt bool
-	alt, hasAlt = c.GetQuery("alt")
+	alt, hasAlt := c.GetQuery("alt")
 	if !hasAlt {
 		alt, _ = c.GetQuery("$alt")
 	}
@@ -99,49 +53,37 @@ func (h *BaseAPIHandler) GetAlt(c *gin.Context) string {
 	return alt
 }
 
-// GetContextWithCancel creates a new context with cancellation capabilities.
-// It embeds the Gin context and the API handler into the new context for later use.
-// The returned cancel function also handles logging the API response if request logging is enabled.
-//
-// Parameters:
-//   - handler: The API handler associated with the request.
-//   - c: The Gin context of the current request.
-//   - ctx: The parent context.
-//
-// Returns:
-//   - context.Context: The new context with cancellation and embedded values.
-//   - APIHandlerCancelFunc: A function to cancel the context and log the response.
 func (h *BaseAPIHandler) GetContextWithCancel(handler interfaces.APIHandler, c *gin.Context, ctx context.Context) (context.Context, APIHandlerCancelFunc) {
 	newCtx, cancel := context.WithCancel(ctx)
-	newCtx = context.WithValue(newCtx, "gin", c)
-	newCtx = context.WithValue(newCtx, "handler", handler)
-	return newCtx, func(params ...interface{}) {
-		if h.Cfg.RequestLog {
-			if len(params) == 1 {
-				data := params[0]
-				switch data.(type) {
-				case []byte:
-					appendAPIResponse(c, data.([]byte))
-				case error:
-					appendAPIResponse(c, []byte(data.(error).Error()))
-				case string:
-					appendAPIResponse(c, []byte(data.(string)))
-				case bool:
-				case nil:
-				}
+	newCtx = context.WithValue(newCtx, ctxKeyGin, c)
+	newCtx = context.WithValue(newCtx, ctxKeyHandler, handler)
+	return newCtx, func(params ...any) {
+		if h.Cfg.RequestLog && len(params) == 1 {
+			switch data := params[0].(type) {
+			case []byte:
+				appendAPIResponse(c, data)
+			case error:
+				appendAPIResponse(c, []byte(data.Error()))
+			case string:
+				appendAPIResponse(c, []byte(data))
 			}
 		}
-
 		cancel()
 	}
 }
 
-// appendAPIResponse preserves any previously captured API response and appends new data.
+// Context keys to avoid string allocation on each request
+type ctxKey int
+
+const (
+	ctxKeyGin ctxKey = iota
+	ctxKeyHandler
+)
+
 func appendAPIResponse(c *gin.Context, data []byte) {
 	if c == nil || len(data) == 0 {
 		return
 	}
-
 	if existing, exists := c.Get("API_RESPONSE"); exists {
 		if existingBytes, ok := existing.([]byte); ok && len(existingBytes) > 0 {
 			combined := make([]byte, 0, len(existingBytes)+len(data)+1)
@@ -154,96 +96,75 @@ func appendAPIResponse(c *gin.Context, data []byte) {
 			return
 		}
 	}
-
 	c.Set("API_RESPONSE", bytes.Clone(data))
 }
 
-// ExecuteWithAuthManager executes a non-streaming request via the core auth manager.
-// This path is the only supported execution route.
+// buildRequestOpts creates request and options, cloning payload/metadata only once (shared reference)
+func buildRequestOpts(normalizedModel string, rawJSON []byte, metadata map[string]any, handlerType string, alt string, stream bool) (coreexecutor.Request, coreexecutor.Options) {
+	// Clone once, share between req and opts
+	payload := cloneBytes(rawJSON)
+	meta := cloneMetadata(metadata)
+
+	req := coreexecutor.Request{
+		Model:    normalizedModel,
+		Payload:  payload,
+		Metadata: meta,
+	}
+	opts := coreexecutor.Options{
+		Stream:          stream,
+		Alt:             alt,
+		OriginalRequest: payload, // Same slice, no second clone
+		SourceFormat:    sdktranslator.FromString(handlerType),
+		Metadata:        meta, // Same map, no second clone
+	}
+	return req, opts
+}
+
+// extractErrorDetails extracts status code and headers from error interface
+func extractErrorDetails(err error) (int, http.Header) {
+	status := http.StatusInternalServerError
+	if se, ok := err.(interface{ StatusCode() int }); ok {
+		if code := se.StatusCode(); code > 0 {
+			status = code
+		}
+	}
+	var addon http.Header
+	if he, ok := err.(interface{ Headers() http.Header }); ok {
+		if hdr := he.Headers(); hdr != nil {
+			addon = hdr.Clone()
+		}
+	}
+	return status, addon
+}
+
 func (h *BaseAPIHandler) ExecuteWithAuthManager(ctx context.Context, handlerType, modelName string, rawJSON []byte, alt string) ([]byte, *interfaces.ErrorMessage) {
 	providers, normalizedModel, metadata, errMsg := h.getRequestDetails(modelName)
 	if errMsg != nil {
 		return nil, errMsg
 	}
-	req := coreexecutor.Request{
-		Model:   normalizedModel,
-		Payload: cloneBytes(rawJSON),
-	}
-	if cloned := cloneMetadata(metadata); cloned != nil {
-		req.Metadata = cloned
-	}
-	opts := coreexecutor.Options{
-		Stream:          false,
-		Alt:             alt,
-		OriginalRequest: cloneBytes(rawJSON),
-		SourceFormat:    sdktranslator.FromString(handlerType),
-	}
-	if cloned := cloneMetadata(metadata); cloned != nil {
-		opts.Metadata = cloned
-	}
+	req, opts := buildRequestOpts(normalizedModel, rawJSON, metadata, handlerType, alt, false)
 	resp, err := h.AuthManager.Execute(ctx, providers, req, opts)
 	if err != nil {
-		status := http.StatusInternalServerError
-		if se, ok := err.(interface{ StatusCode() int }); ok && se != nil {
-			if code := se.StatusCode(); code > 0 {
-				status = code
-			}
-		}
-		var addon http.Header
-		if he, ok := err.(interface{ Headers() http.Header }); ok && he != nil {
-			if hdr := he.Headers(); hdr != nil {
-				addon = hdr.Clone()
-			}
-		}
+		status, addon := extractErrorDetails(err)
 		return nil, &interfaces.ErrorMessage{StatusCode: status, Error: err, Addon: addon}
 	}
-	return cloneBytes(resp.Payload), nil
+	return resp.Payload, nil
 }
 
-// ExecuteCountWithAuthManager executes a non-streaming request via the core auth manager.
-// This path is the only supported execution route.
 func (h *BaseAPIHandler) ExecuteCountWithAuthManager(ctx context.Context, handlerType, modelName string, rawJSON []byte, alt string) ([]byte, *interfaces.ErrorMessage) {
 	providers, normalizedModel, metadata, errMsg := h.getRequestDetails(modelName)
 	if errMsg != nil {
 		return nil, errMsg
 	}
-	req := coreexecutor.Request{
-		Model:   normalizedModel,
-		Payload: cloneBytes(rawJSON),
-	}
-	if cloned := cloneMetadata(metadata); cloned != nil {
-		req.Metadata = cloned
-	}
-	opts := coreexecutor.Options{
-		Stream:          false,
-		Alt:             alt,
-		OriginalRequest: cloneBytes(rawJSON),
-		SourceFormat:    sdktranslator.FromString(handlerType),
-	}
-	if cloned := cloneMetadata(metadata); cloned != nil {
-		opts.Metadata = cloned
-	}
+	req, opts := buildRequestOpts(normalizedModel, rawJSON, metadata, handlerType, alt, false)
 	resp, err := h.AuthManager.ExecuteCount(ctx, providers, req, opts)
 	if err != nil {
-		status := http.StatusInternalServerError
-		if se, ok := err.(interface{ StatusCode() int }); ok && se != nil {
-			if code := se.StatusCode(); code > 0 {
-				status = code
-			}
-		}
-		var addon http.Header
-		if he, ok := err.(interface{ Headers() http.Header }); ok && he != nil {
-			if hdr := he.Headers(); hdr != nil {
-				addon = hdr.Clone()
-			}
-		}
+		status, addon := extractErrorDetails(err)
 		return nil, &interfaces.ErrorMessage{StatusCode: status, Error: err, Addon: addon}
 	}
-	return cloneBytes(resp.Payload), nil
+	return resp.Payload, nil
 }
 
-// ExecuteStreamWithAuthManager executes a streaming request via the core auth manager.
-// This path is the only supported execution route.
 func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handlerType, modelName string, rawJSON []byte, alt string) (<-chan []byte, <-chan *interfaces.ErrorMessage) {
 	providers, normalizedModel, metadata, errMsg := h.getRequestDetails(modelName)
 	if errMsg != nil {
@@ -252,65 +173,29 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 		close(errChan)
 		return nil, errChan
 	}
-	req := coreexecutor.Request{
-		Model:   normalizedModel,
-		Payload: cloneBytes(rawJSON),
-	}
-	if cloned := cloneMetadata(metadata); cloned != nil {
-		req.Metadata = cloned
-	}
-	opts := coreexecutor.Options{
-		Stream:          true,
-		Alt:             alt,
-		OriginalRequest: cloneBytes(rawJSON),
-		SourceFormat:    sdktranslator.FromString(handlerType),
-	}
-	if cloned := cloneMetadata(metadata); cloned != nil {
-		opts.Metadata = cloned
-	}
+	req, opts := buildRequestOpts(normalizedModel, rawJSON, metadata, handlerType, alt, true)
 	chunks, err := h.AuthManager.ExecuteStream(ctx, providers, req, opts)
 	if err != nil {
 		errChan := make(chan *interfaces.ErrorMessage, 1)
-		status := http.StatusInternalServerError
-		if se, ok := err.(interface{ StatusCode() int }); ok && se != nil {
-			if code := se.StatusCode(); code > 0 {
-				status = code
-			}
-		}
-		var addon http.Header
-		if he, ok := err.(interface{ Headers() http.Header }); ok && he != nil {
-			if hdr := he.Headers(); hdr != nil {
-				addon = hdr.Clone()
-			}
-		}
+		status, addon := extractErrorDetails(err)
 		errChan <- &interfaces.ErrorMessage{StatusCode: status, Error: err, Addon: addon}
 		close(errChan)
 		return nil, errChan
 	}
-	dataChan := make(chan []byte)
+
+	dataChan := make(chan []byte, 8) // Buffered to reduce blocking
 	errChan := make(chan *interfaces.ErrorMessage, 1)
 	go func() {
 		defer close(dataChan)
 		defer close(errChan)
 		for chunk := range chunks {
 			if chunk.Err != nil {
-				status := http.StatusInternalServerError
-				if se, ok := chunk.Err.(interface{ StatusCode() int }); ok && se != nil {
-					if code := se.StatusCode(); code > 0 {
-						status = code
-					}
-				}
-				var addon http.Header
-				if he, ok := chunk.Err.(interface{ Headers() http.Header }); ok && he != nil {
-					if hdr := he.Headers(); hdr != nil {
-						addon = hdr.Clone()
-					}
-				}
+				status, addon := extractErrorDetails(chunk.Err)
 				errChan <- &interfaces.ErrorMessage{StatusCode: status, Error: chunk.Err, Addon: addon}
 				return
 			}
 			if len(chunk.Payload) > 0 {
-				dataChan <- cloneBytes(chunk.Payload)
+				dataChan <- chunk.Payload // No clone needed, executor already owns this
 			}
 		}
 	}()
@@ -318,62 +203,35 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 }
 
 func (h *BaseAPIHandler) getRequestDetails(modelName string) (providers []string, normalizedModel string, metadata map[string]any, err *interfaces.ErrorMessage) {
-	// Resolve "auto" model to an actual available model first
 	resolvedModelName := util.ResolveAutoModel(modelName)
-
-	// Check if user specified a specific provider via prefix (e.g., "[Gemini CLI] model-name")
 	specifiedProvider := util.ExtractProviderFromPrefixedModelID(resolvedModelName)
-
-	// Normalize model ID - this is the single point of model ID normalization for all requests
 	cleanModelName := util.NormalizeIncomingModelID(resolvedModelName)
-
 	providerName, extractedModelName, isDynamic := h.parseDynamicModel(cleanModelName)
-
-	// Normalize the model name to handle suffixes like "-thinking-128"
-	// This needs to happen before determining the provider for non-dynamic models.
-	normalizedModel, metadata = normalizeModelMetadata(cleanModelName)
+	normalizedModel, metadata = util.NormalizeGeminiThinkingModel(cleanModelName)
 
 	if isDynamic {
 		providers = []string{providerName}
-		// For dynamic models, the extractedModelName is already normalized by parseDynamicModel
-		// so we use it as the final normalizedModel.
 		normalizedModel = extractedModelName
 	} else if specifiedProvider != "" {
-		// User specified a specific provider via prefix - use ONLY that provider
 		providers = []string{specifiedProvider}
 	} else {
-		// No specific provider requested - get all available providers for this model
 		providers = util.GetProviderName(normalizedModel)
 	}
 
 	if len(providers) == 0 {
 		return nil, "", nil, &interfaces.ErrorMessage{StatusCode: http.StatusBadRequest, Error: fmt.Errorf("unknown provider for model %s", modelName)}
 	}
-
 	return providers, normalizedModel, metadata, nil
 }
 
 func (h *BaseAPIHandler) parseDynamicModel(modelName string) (providerName, model string, isDynamic bool) {
-	var providerPart, modelPart string
-	for _, sep := range []string{"://"} {
-		if parts := strings.SplitN(modelName, sep, 2); len(parts) == 2 {
-			providerPart = parts[0]
-			modelPart = parts[1]
-			break
+	if parts := strings.SplitN(modelName, "://", 2); len(parts) == 2 {
+		for _, pName := range h.OpenAICompatProviders {
+			if pName == parts[0] {
+				return parts[0], parts[1], true
+			}
 		}
 	}
-
-	if providerPart == "" {
-		return "", modelName, false
-	}
-
-	// Check if the provider is a configured openai-compatibility provider
-	for _, pName := range h.OpenAICompatProviders {
-		if pName == providerPart {
-			return providerPart, modelPart, true
-		}
-	}
-
 	return "", modelName, false
 }
 
@@ -381,13 +239,7 @@ func cloneBytes(src []byte) []byte {
 	if len(src) == 0 {
 		return nil
 	}
-	dst := make([]byte, len(src))
-	copy(dst, src)
-	return dst
-}
-
-func normalizeModelMetadata(modelName string) (string, map[string]any) {
-	return util.NormalizeGeminiThinkingModel(modelName)
+	return bytes.Clone(src)
 }
 
 func cloneMetadata(src map[string]any) map[string]any {
@@ -401,7 +253,6 @@ func cloneMetadata(src map[string]any) map[string]any {
 	return dst
 }
 
-// WriteErrorResponse writes an error message to the response writer using the HTTP status embedded in the message.
 func (h *BaseAPIHandler) WriteErrorResponse(c *gin.Context, msg *interfaces.ErrorMessage) {
 	status := http.StatusInternalServerError
 	if msg != nil && msg.StatusCode > 0 {
@@ -427,21 +278,20 @@ func (h *BaseAPIHandler) WriteErrorResponse(c *gin.Context, msg *interfaces.Erro
 }
 
 func (h *BaseAPIHandler) LoggingAPIResponseError(ctx context.Context, err *interfaces.ErrorMessage) {
-	if h.Cfg.RequestLog {
-		if ginContext, ok := ctx.Value("gin").(*gin.Context); ok {
-			if apiResponseErrors, isExist := ginContext.Get("API_RESPONSE_ERROR"); isExist {
-				if slicesAPIResponseError, isOk := apiResponseErrors.([]*interfaces.ErrorMessage); isOk {
-					slicesAPIResponseError = append(slicesAPIResponseError, err)
-					ginContext.Set("API_RESPONSE_ERROR", slicesAPIResponseError)
-				}
-			} else {
-				// Create new response data entry
-				ginContext.Set("API_RESPONSE_ERROR", []*interfaces.ErrorMessage{err})
-			}
+	if !h.Cfg.RequestLog {
+		return
+	}
+	ginContext, ok := ctx.Value(ctxKeyGin).(*gin.Context)
+	if !ok {
+		return
+	}
+	if apiResponseErrors, isExist := ginContext.Get("API_RESPONSE_ERROR"); isExist {
+		if slices, isOk := apiResponseErrors.([]*interfaces.ErrorMessage); isOk {
+			ginContext.Set("API_RESPONSE_ERROR", append(slices, err))
+			return
 		}
 	}
+	ginContext.Set("API_RESPONSE_ERROR", []*interfaces.ErrorMessage{err})
 }
 
-// APIHandlerCancelFunc is a function type for canceling an API handler's context.
-// It can optionally accept parameters, which are used for logging the response.
-type APIHandlerCancelFunc func(params ...interface{})
+type APIHandlerCancelFunc func(params ...any)

@@ -1,5 +1,4 @@
 // Package to_ir converts provider-specific API formats into unified format.
-// This file handles Gemini AI Studio API requests and responses (streaming and non-streaming).
 package to_ir
 
 import (
@@ -11,7 +10,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 )
 
 // debugToolCalls enables verbose logging of tool call arguments for debugging
@@ -82,7 +81,7 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 			schemaResult = rs
 		}
 		if schemaResult.Exists() && schemaResult.IsObject() {
-			var schema map[string]interface{}
+			var schema map[string]any
 			if err := json.Unmarshal([]byte(schemaResult.Raw), &schema); err == nil {
 				req.ResponseSchema = schema
 			}
@@ -113,14 +112,14 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 		for _, t := range tools.Array() {
 			if fds := t.Get("functionDeclarations"); fds.Exists() && fds.IsArray() {
 				for _, fd := range fds.Array() {
-					var params map[string]interface{}
+					var params map[string]any
 					if p := fd.Get("parameters"); p.Exists() && p.IsObject() {
 						if err := json.Unmarshal([]byte(p.Raw), &params); err == nil {
 							params = ir.CleanJsonSchema(params)
 						}
 					}
 					if params == nil {
-						params = make(map[string]interface{})
+						params = make(map[string]any)
 					}
 					req.Tools = append(req.Tools, ir.ToolDefinition{
 						Name:        fd.Get("name").String(),
@@ -135,38 +134,38 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 				req.Metadata = make(map[string]any)
 			}
 			if gs := t.Get("googleSearch"); gs.Exists() {
-				var gsVal interface{}
+				var gsVal any
 				if gs.IsObject() {
 					json.Unmarshal([]byte(gs.Raw), &gsVal)
 				} else {
-					gsVal = map[string]interface{}{}
+					gsVal = map[string]any{}
 				}
 				req.Metadata[ir.MetaGoogleSearch] = gsVal
 			}
 			if gsr := t.Get("googleSearchRetrieval"); gsr.Exists() {
-				var gsrVal interface{}
+				var gsrVal any
 				if gsr.IsObject() {
 					json.Unmarshal([]byte(gsr.Raw), &gsrVal)
 				} else {
-					gsrVal = map[string]interface{}{}
+					gsrVal = map[string]any{}
 				}
 				req.Metadata[ir.MetaGoogleSearchRetrieval] = gsrVal
 			}
 			if ce := t.Get("codeExecution"); ce.Exists() {
-				var ceVal interface{}
+				var ceVal any
 				if ce.IsObject() {
 					json.Unmarshal([]byte(ce.Raw), &ceVal)
 				} else {
-					ceVal = map[string]interface{}{}
+					ceVal = map[string]any{}
 				}
 				req.Metadata[ir.MetaCodeExecution] = ceVal
 			}
 			if uc := t.Get("urlContext"); uc.Exists() {
-				var ucVal interface{}
+				var ucVal any
 				if uc.IsObject() {
 					json.Unmarshal([]byte(uc.Raw), &ucVal)
 				} else {
-					ucVal = map[string]interface{}{}
+					ucVal = map[string]any{}
 				}
 				req.Metadata[ir.MetaURLContext] = ucVal
 			}
@@ -180,7 +179,7 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 		req.Metadata[ir.MetaGeminiCachedContent] = v.String()
 	}
 	if v := parsed.Get("labels"); v.Exists() && v.IsObject() {
-		var labels map[string]interface{}
+		var labels map[string]any
 		if json.Unmarshal([]byte(v.Raw), &labels) == nil {
 			req.Metadata[ir.MetaGeminiLabels] = labels
 		}
@@ -654,7 +653,7 @@ func ParseGeminiChunkWithContext(rawJSON []byte, schemaCtx *ir.ToolSchemaContext
 		}
 
 		// Parse logprobs from candidate if present
-		var logprobs interface{}
+		var logprobs any
 		if candidates := parsed.Get("candidates").Array(); len(candidates) > 0 {
 			logprobs = parseGeminiLogprobs(candidates[0])
 		}
@@ -746,7 +745,7 @@ func parseGeminiUsage(parsed gjson.Result) *ir.Usage {
 
 // parseGeminiLogprobs extracts logprobs from Gemini candidate and converts to OpenAI format.
 // Gemini returns avgLogprobs (float) and logprobsResult (detailed per-token).
-func parseGeminiLogprobs(candidate gjson.Result) interface{} {
+func parseGeminiLogprobs(candidate gjson.Result) any {
 	// Check if logprobsResult exists (detailed per-token logprobs)
 	if lr := candidate.Get("logprobsResult"); lr.Exists() {
 		return convertGeminiLogprobsToOpenAI(lr)
@@ -754,7 +753,7 @@ func parseGeminiLogprobs(candidate gjson.Result) interface{} {
 	// Fall back to avgLogprobs if available
 	if avg := candidate.Get("avgLogprobs"); avg.Exists() {
 		// OpenAI doesn't have avgLogprobs equivalent, but we can include it
-		return map[string]interface{}{
+		return map[string]any{
 			"avg_logprob": avg.Float(),
 		}
 	}
@@ -764,8 +763,8 @@ func parseGeminiLogprobs(candidate gjson.Result) interface{} {
 // convertGeminiLogprobsToOpenAI converts Gemini logprobsResult to OpenAI logprobs format.
 // Gemini format: {"chosenCandidates": [{"token": "...", "logProbability": -0.5, ...}], "topCandidates": [...]}
 // OpenAI format: {"content": [{"token": "...", "logprob": -0.5, "top_logprobs": [...]}]}
-func convertGeminiLogprobsToOpenAI(lr gjson.Result) map[string]interface{} {
-	var content []interface{}
+func convertGeminiLogprobsToOpenAI(lr gjson.Result) map[string]any {
+	var content []any
 
 	// Parse chosen candidates (the actual tokens in the response)
 	chosenCandidates := lr.Get("chosenCandidates")
@@ -773,7 +772,7 @@ func convertGeminiLogprobsToOpenAI(lr gjson.Result) map[string]interface{} {
 
 	if chosenCandidates.Exists() && chosenCandidates.IsArray() {
 		for i, chosen := range chosenCandidates.Array() {
-			tokenEntry := map[string]interface{}{
+			tokenEntry := map[string]any{
 				"token":   chosen.Get("token").String(),
 				"logprob": chosen.Get("logProbability").Float(),
 			}
@@ -782,10 +781,10 @@ func convertGeminiLogprobsToOpenAI(lr gjson.Result) map[string]interface{} {
 			if topCandidates.Exists() && topCandidates.IsArray() {
 				topArr := topCandidates.Array()
 				if i < len(topArr) {
-					var topLogprobs []interface{}
+					var topLogprobs []any
 					if candidates := topArr[i].Get("candidates"); candidates.Exists() && candidates.IsArray() {
 						for _, c := range candidates.Array() {
-							topLogprobs = append(topLogprobs, map[string]interface{}{
+							topLogprobs = append(topLogprobs, map[string]any{
 								"token":   c.Get("token").String(),
 								"logprob": c.Get("logProbability").Float(),
 							})
@@ -804,7 +803,7 @@ func convertGeminiLogprobsToOpenAI(lr gjson.Result) map[string]interface{} {
 	if len(content) == 0 {
 		return nil
 	}
-	return map[string]interface{}{"content": content}
+	return map[string]any{"content": content}
 }
 
 func parseGeminiInlineImage(part gjson.Result) *ir.ImagePart {

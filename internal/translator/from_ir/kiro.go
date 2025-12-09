@@ -1,15 +1,10 @@
-/**
- * @file Kiro (Amazon Q) request converter
- * @description Converts unified format into Kiro API request format.
- */
-
 package from_ir
 
 import (
 	"encoding/json"
 	"strings"
 
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 )
 
 // KiroProvider handles conversion from unified format to Kiro API format.
@@ -23,8 +18,8 @@ func (p *KiroProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error
 
 	injectSystemPrompt(systemPrompt, &history, currentMessage, req.Model)
 
-	request := map[string]interface{}{
-		"conversationState": map[string]interface{}{
+	request := map[string]any{
+		"conversationState": map[string]any{
 			"chatTriggerType": "MANUAL",
 			"conversationId":  ir.GenerateUUID(),
 			"currentMessage":  currentMessage,
@@ -44,16 +39,16 @@ func (p *KiroProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error
 	return []byte(ir.SanitizeText(string(result))), nil
 }
 
-func extractTools(irTools []ir.ToolDefinition) []interface{} {
+func extractTools(irTools []ir.ToolDefinition) []any {
 	if len(irTools) == 0 {
 		return nil
 	}
-	tools := make([]interface{}, len(irTools))
+	tools := make([]any, len(irTools))
 	for i, t := range irTools {
-		tools[i] = map[string]interface{}{
-			"toolSpecification": map[string]interface{}{
+		tools[i] = map[string]any{
+			"toolSpecification": map[string]any{
 				"name": t.Name, "description": t.Description,
-				"inputSchema": map[string]interface{}{"json": t.Parameters},
+				"inputSchema": map[string]any{"json": t.Parameters},
 			},
 		}
 	}
@@ -70,7 +65,7 @@ func extractSystemPrompt(messages []ir.Message) string {
 	return strings.Join(parts, "\n")
 }
 
-func processMessages(messages []ir.Message, tools []interface{}, modelID string) ([]interface{}, map[string]interface{}) {
+func processMessages(messages []ir.Message, tools []any, modelID string) ([]any, map[string]any) {
 	var nonSystem []ir.Message
 	for _, msg := range messages {
 		if msg.Role != ir.RoleSystem {
@@ -117,7 +112,7 @@ func processMessages(messages []ir.Message, tools []interface{}, modelID string)
 	// Last message is currentMessage
 	lastMsg := nonSystem[len(nonSystem)-1]
 	if lastMsg.Role == ir.RoleUser {
-		history := make([]interface{}, 0, len(nonSystem)-1)
+		history := make([]any, 0, len(nonSystem)-1)
 		for i := 0; i < len(nonSystem)-1; i++ {
 			if m := convertMessage(nonSystem[i], tools, modelID, false); m != nil {
 				history = append(history, m)
@@ -136,14 +131,14 @@ func processMessages(messages []ir.Message, tools []interface{}, modelID string)
 		}
 	}
 
-	history := make([]interface{}, 0, trailingStart)
+	history := make([]any, 0, trailingStart)
 	for i := range trailingStart {
 		if m := convertMessage(nonSystem[i], tools, modelID, false); m != nil {
 			history = append(history, m)
 		}
 	}
 
-	var currentMessage map[string]interface{}
+	var currentMessage map[string]any
 	if trailingStart < len(nonSystem) {
 		currentMessage = buildMergedToolResultMessage(nonSystem[trailingStart:], tools, modelID)
 	} else {
@@ -152,7 +147,7 @@ func processMessages(messages []ir.Message, tools []interface{}, modelID string)
 	return history, currentMessage
 }
 
-func convertMessage(msg ir.Message, tools []interface{}, modelID string, isCurrent bool) map[string]interface{} {
+func convertMessage(msg ir.Message, tools []any, modelID string, isCurrent bool) map[string]any {
 	switch msg.Role {
 	case ir.RoleUser:
 		return buildUserMessage(msg, tools, modelID, isCurrent)
@@ -164,9 +159,9 @@ func convertMessage(msg ir.Message, tools []interface{}, modelID string, isCurre
 	return nil
 }
 
-func buildUserMessage(msg ir.Message, tools []interface{}, modelID string, isCurrent bool) map[string]interface{} {
+func buildUserMessage(msg ir.Message, tools []any, modelID string, isCurrent bool) map[string]any {
 	content := ir.CombineTextParts(msg)
-	var toolResults, images []interface{}
+	var toolResults, images []any
 	for _, part := range msg.Content {
 		if part.Type == ir.ContentTypeToolResult && part.ToolResult != nil {
 			toolResults = append(toolResults, buildToolResultItem(part.ToolResult))
@@ -179,7 +174,7 @@ func buildUserMessage(msg ir.Message, tools []interface{}, modelID string, isCur
 		content = "Continue"
 	}
 
-	ctx := map[string]interface{}{}
+	ctx := map[string]any{}
 	if len(toolResults) > 0 {
 		ctx["toolResults"] = toolResults
 	}
@@ -187,7 +182,7 @@ func buildUserMessage(msg ir.Message, tools []interface{}, modelID string, isCur
 		ctx["tools"] = tools
 	}
 
-	userInput := map[string]interface{}{
+	userInput := map[string]any{
 		"content": content, "modelId": modelID, "origin": "AI_EDITOR", "userInputMessageContext": ctx,
 	}
 	if len(images) > 0 {
@@ -196,22 +191,22 @@ func buildUserMessage(msg ir.Message, tools []interface{}, modelID string, isCur
 		userInput["images"] = nil // Explicit nil for current message if empty
 	}
 
-	return map[string]interface{}{"userInputMessage": userInput}
+	return map[string]any{"userInputMessage": userInput}
 }
 
-func buildAssistantMessage(msg ir.Message, _ bool) map[string]interface{} {
-	toolUses := make([]interface{}, len(msg.ToolCalls))
+func buildAssistantMessage(msg ir.Message, _ bool) map[string]any {
+	toolUses := make([]any, len(msg.ToolCalls))
 	for i, tc := range msg.ToolCalls {
-		toolUses[i] = map[string]interface{}{
+		toolUses[i] = map[string]any{
 			"input": ir.ParseToolCallArgs(tc.Args), "name": tc.Name, "toolUseId": tc.ID,
 		}
 	}
-	assistantMsg := map[string]interface{}{"content": ir.CombineTextParts(msg), "toolUses": toolUses}
-	return map[string]interface{}{"assistantResponseMessage": assistantMsg}
+	assistantMsg := map[string]any{"content": ir.CombineTextParts(msg), "toolUses": toolUses}
+	return map[string]any{"assistantResponseMessage": assistantMsg}
 }
 
-func buildToolResultMessage(msg ir.Message, modelID string) map[string]interface{} {
-	var toolResults []interface{}
+func buildToolResultMessage(msg ir.Message, modelID string) map[string]any {
+	var toolResults []any
 	for _, part := range msg.Content {
 		if part.Type == ir.ContentTypeToolResult && part.ToolResult != nil {
 			toolResults = append(toolResults, buildToolResultItem(part.ToolResult))
@@ -220,16 +215,16 @@ func buildToolResultMessage(msg ir.Message, modelID string) map[string]interface
 	if len(toolResults) == 0 {
 		return nil
 	}
-	return map[string]interface{}{
-		"userInputMessage": map[string]interface{}{
-			"content": "Continue", "modelId": modelID, "origin": "AI_EDITOR", "images": []interface{}{},
-			"userInputMessageContext": map[string]interface{}{"toolResults": toolResults},
+	return map[string]any{
+		"userInputMessage": map[string]any{
+			"content": "Continue", "modelId": modelID, "origin": "AI_EDITOR", "images": []any{},
+			"userInputMessageContext": map[string]any{"toolResults": toolResults},
 		},
 	}
 }
 
-func buildMergedToolResultMessage(msgs []ir.Message, tools []interface{}, modelID string) map[string]interface{} {
-	var toolResults []interface{}
+func buildMergedToolResultMessage(msgs []ir.Message, tools []any, modelID string) map[string]any {
+	var toolResults []any
 	var textParts []string
 	for _, msg := range msgs {
 		for _, part := range msg.Content {
@@ -244,39 +239,39 @@ func buildMergedToolResultMessage(msgs []ir.Message, tools []interface{}, modelI
 	if len(textParts) > 0 {
 		content = strings.Join(textParts, "\n")
 	}
-	ctx := map[string]interface{}{"toolResults": toolResults}
+	ctx := map[string]any{"toolResults": toolResults}
 	if len(tools) > 0 {
 		ctx["tools"] = tools
 	}
-	return map[string]interface{}{
-		"userInputMessage": map[string]interface{}{
+	return map[string]any{
+		"userInputMessage": map[string]any{
 			"content": content, "modelId": modelID, "origin": "AI_EDITOR", "images": nil, "userInputMessageContext": ctx,
 		},
 	}
 }
 
-func buildToolResultItem(tr *ir.ToolResultPart) map[string]interface{} {
-	return map[string]interface{}{
-		"content": []interface{}{map[string]interface{}{"text": ir.SanitizeText(tr.Result)}},
+func buildToolResultItem(tr *ir.ToolResultPart) map[string]any {
+	return map[string]any{
+		"content": []any{map[string]any{"text": ir.SanitizeText(tr.Result)}},
 		"status":  "success", "toolUseId": tr.ToolCallID,
 	}
 }
 
-func buildImageItem(img *ir.ImagePart) map[string]interface{} {
+func buildImageItem(img *ir.ImagePart) map[string]any {
 	format := "png"
 	if parts := strings.Split(img.MimeType, "/"); len(parts) == 2 {
 		format = parts[1]
 	}
-	return map[string]interface{}{"format": format, "source": map[string]interface{}{"bytes": img.Data}}
+	return map[string]any{"format": format, "source": map[string]any{"bytes": img.Data}}
 }
 
-func injectSystemPrompt(prompt string, history *[]interface{}, currentMessage map[string]interface{}, modelID string) {
+func injectSystemPrompt(prompt string, history *[]any, currentMessage map[string]any, modelID string) {
 	if prompt == "" {
 		return
 	}
-	prepend := func(msg interface{}) bool {
-		if m, ok := msg.(map[string]interface{}); ok {
-			if userMsg, ok := m["userInputMessage"].(map[string]interface{}); ok {
+	prepend := func(msg any) bool {
+		if m, ok := msg.(map[string]any); ok {
+			if userMsg, ok := m["userInputMessage"].(map[string]any); ok {
 				if existing, _ := userMsg["content"].(string); existing != "" {
 					userMsg["content"] = prompt + "\n\n" + existing
 				} else {
@@ -295,8 +290,8 @@ func injectSystemPrompt(prompt string, history *[]interface{}, currentMessage ma
 		return
 	}
 
-	*history = append([]interface{}{map[string]interface{}{
-		"userInputMessage": map[string]interface{}{
+	*history = append([]any{map[string]any{
+		"userInputMessage": map[string]any{
 			"content": prompt, "modelId": modelID, "origin": "AI_EDITOR",
 		},
 	}}, *history...)

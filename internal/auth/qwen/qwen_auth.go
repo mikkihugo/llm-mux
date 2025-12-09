@@ -145,7 +145,7 @@ func (qa *QwenAuth) RefreshTokens(ctx context.Context, refreshToken string) (*Qw
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		var errorData map[string]interface{}
+		var errorData map[string]any
 		if err = json.Unmarshal(body, &errorData); err == nil {
 			return nil, fmt.Errorf("token refresh failed: %v - %v", errorData["error"], errorData["error_description"])
 		}
@@ -252,7 +252,7 @@ func (qa *QwenAuth) PollForToken(deviceCode, codeVerifier string) (*QwenTokenDat
 
 		if resp.StatusCode != http.StatusOK {
 			// Parse the response as JSON to check for OAuth RFC 8628 standard errors
-			var errorData map[string]interface{}
+			var errorData map[string]any
 			if err = json.Unmarshal(body, &errorData); err == nil {
 				// According to OAuth RFC 8628, handle standard polling responses
 				if resp.StatusCode == http.StatusBadRequest {

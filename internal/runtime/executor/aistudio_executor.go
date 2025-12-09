@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/nghyane/llm-mux/internal/config"
-	"github.com/nghyane/llm-mux/internal/translator_new/from_ir"
+	"github.com/nghyane/llm-mux/internal/translator/from_ir"
 	"github.com/nghyane/llm-mux/internal/util"
 	"github.com/nghyane/llm-mux/internal/wsrelay"
 	cliproxyauth "github.com/nghyane/llm-mux/sdk/cliproxy/auth"

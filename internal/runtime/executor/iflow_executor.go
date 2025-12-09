@@ -169,7 +169,7 @@ func (e *IFlowExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Au
 		}()
 
 		scanner := bufio.NewScanner(httpResp.Body)
-		scanner.Buffer(nil, 20_971_520)
+		scanner.Buffer(make([]byte, 64*1024), 20_971_520)
 		var streamState *OpenAIStreamState
 		for scanner.Scan() {
 			line := scanner.Bytes()

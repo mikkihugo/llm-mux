@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/tidwall/gjson"
-	"github.com/nghyane/llm-mux/internal/translator_new/to_ir"
+	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 )
 
 func TestLogprobsTranslation(t *testing.T) {
@@ -38,10 +38,10 @@ func TestLogprobsTranslation(t *testing.T) {
 	}
 
 	// Check if responseLogprobs is set
-	var result map[string]interface{}
+	var result map[string]any
 	json.Unmarshal(geminiReq, &result)
 
-	genConfig, ok := result["generationConfig"].(map[string]interface{})
+	genConfig, ok := result["generationConfig"].(map[string]any)
 	if !ok {
 		t.Fatalf("generationConfig not found")
 	}

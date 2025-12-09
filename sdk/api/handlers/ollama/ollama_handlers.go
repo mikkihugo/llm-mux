@@ -1,6 +1,3 @@
-// Package ollama provides HTTP handlers for Ollama API endpoints.
-// This package implements the Ollama-compatible API interface, including model listing,
-// chat completion, and generate functionality. It supports both streaming and non-streaming responses.
 package ollama
 
 import (
@@ -14,8 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nghyane/llm-mux/internal/constant"
 	"github.com/nghyane/llm-mux/internal/registry"
-	"github.com/nghyane/llm-mux/internal/translator_new/from_ir"
-	"github.com/nghyane/llm-mux/internal/translator_new/to_ir"
+	"github.com/nghyane/llm-mux/internal/translator/from_ir"
+	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/sdk/api/handlers"
 	"github.com/nghyane/llm-mux/sdk/api/handlers/openai"
 	"github.com/tidwall/gjson"
@@ -25,31 +22,24 @@ const (
 	OllamaVersion = "0.12.10"
 )
 
-// OllamaAPIHandler contains the handlers for Ollama API endpoints.
 type OllamaAPIHandler struct {
 	*handlers.BaseAPIHandler
 }
 
-// NewOllamaAPIHandler creates a new Ollama API handlers instance.
 func NewOllamaAPIHandler(apiHandlers *handlers.BaseAPIHandler) *OllamaAPIHandler {
 	return &OllamaAPIHandler{
 		BaseAPIHandler: apiHandlers,
 	}
 }
 
-// HandlerType returns the identifier for this handler implementation.
 func (h *OllamaAPIHandler) HandlerType() string {
 	return constant.Ollama
 }
 
-// Models returns a list of supported models for this API handler.
 func (h *OllamaAPIHandler) Models() []map[string]any {
-	// Get all available models from registry
-	modelRegistry := registry.GetGlobalRegistry()
-	return modelRegistry.GetAvailableModels("openai")
+	return registry.GetGlobalRegistry().GetAvailableModels("openai")
 }
 
-// Version handles the /api/version endpoint.
 func (h *OllamaAPIHandler) Version(c *gin.Context) {
 	c.Header("Content-Type", "application/json")
 	c.Header("Access-Control-Allow-Origin", "*")
@@ -59,7 +49,6 @@ func (h *OllamaAPIHandler) Version(c *gin.Context) {
 	})
 }
 
-// Tags handles the /api/tags endpoint (list models).
 func (h *OllamaAPIHandler) Tags(c *gin.Context) {
 	c.Header("Content-Type", "application/json")
 	c.Header("Access-Control-Allow-Origin", "*")
@@ -70,7 +59,7 @@ func (h *OllamaAPIHandler) Tags(c *gin.Context) {
 	allModels := modelRegistry.GetAvailableModels("openai")
 
 	// Convert to Ollama format
-	ollamaModels := make([]map[string]interface{}, 0)
+	ollamaModels := make([]map[string]any, 0)
 	for _, model := range allModels {
 		modelID := ""
 		if id, ok := model["id"].(string); ok {
@@ -86,13 +75,13 @@ func (h *OllamaAPIHandler) Tags(c *gin.Context) {
 		// Remove "models/" prefix if present
 		modelID = strings.TrimPrefix(modelID, "models/")
 
-		ollamaModels = append(ollamaModels, map[string]interface{}{
+		ollamaModels = append(ollamaModels, map[string]any{
 			"name":        modelID,
 			"model":       modelID,
 			"modified_at": time.Now().UTC().Format(time.RFC3339),
 			"size":        0,
 			"digest":      "",
-			"details": map[string]interface{}{
+			"details": map[string]any{
 				"parent_model":       "",
 				"format":             "gguf",
 				"family":             "Ollama",
@@ -108,13 +97,12 @@ func (h *OllamaAPIHandler) Tags(c *gin.Context) {
 	})
 }
 
-// Show handles the /api/show endpoint (model information).
 func (h *OllamaAPIHandler) Show(c *gin.Context) {
 	c.Header("Content-Type", "application/json")
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Server", fmt.Sprintf("ollama/%s", OllamaVersion))
 
-	var requestBody map[string]interface{}
+	var requestBody map[string]any
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
 		c.JSON(http.StatusBadRequest, handlers.ErrorResponse{
 			Error: handlers.ErrorDetail{
@@ -141,7 +129,6 @@ func (h *OllamaAPIHandler) Show(c *gin.Context) {
 	c.Data(http.StatusOK, "application/json", showResponse)
 }
 
-// Chat handles the /api/chat endpoint.
 func (h *OllamaAPIHandler) Chat(c *gin.Context) {
 	rawJSON, err := c.GetRawData()
 	if err != nil {
@@ -204,7 +191,6 @@ func (h *OllamaAPIHandler) Chat(c *gin.Context) {
 	}
 }
 
-// Generate handles the /api/generate endpoint.
 func (h *OllamaAPIHandler) Generate(c *gin.Context) {
 	rawJSON, err := c.GetRawData()
 	if err != nil {
@@ -267,8 +253,7 @@ func (h *OllamaAPIHandler) Generate(c *gin.Context) {
 	}
 }
 
-// handleOllamaChatStream handles streaming chat responses
-func (h *OllamaAPIHandler) handleOllamaChatStream(c *gin.Context, openaiHandler *openai.OpenAIAPIHandler, openaiRequest []byte, modelName string) {
+func (h *OllamaAPIHandler) handleOllamaChatStream(c *gin.Context, _ *openai.OpenAIAPIHandler, openaiRequest []byte, modelName string) {
 	c.Header("Content-Type", "application/json")
 	c.Header("Transfer-Encoding", "chunked")
 	c.Header("Access-Control-Allow-Origin", "*")
@@ -347,8 +332,7 @@ func (h *OllamaAPIHandler) handleOllamaChatStream(c *gin.Context, openaiHandler 
 	}
 }
 
-// handleOllamaChatNonStream handles non-streaming chat responses
-func (h *OllamaAPIHandler) handleOllamaChatNonStream(c *gin.Context, openaiHandler *openai.OpenAIAPIHandler, openaiRequest []byte, modelName string) {
+func (h *OllamaAPIHandler) handleOllamaChatNonStream(c *gin.Context, _ *openai.OpenAIAPIHandler, openaiRequest []byte, modelName string) {
 	c.Header("Content-Type", "application/json")
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Server", fmt.Sprintf("ollama/%s", OllamaVersion))
@@ -384,8 +368,7 @@ func (h *OllamaAPIHandler) handleOllamaChatNonStream(c *gin.Context, openaiHandl
 	cliCancel()
 }
 
-// handleOllamaGenerateStream handles streaming generate responses
-func (h *OllamaAPIHandler) handleOllamaGenerateStream(c *gin.Context, openaiHandler *openai.OpenAIAPIHandler, openaiRequest []byte, modelName string) {
+func (h *OllamaAPIHandler) handleOllamaGenerateStream(c *gin.Context, _ *openai.OpenAIAPIHandler, openaiRequest []byte, modelName string) {
 	c.Header("Content-Type", "application/json")
 	c.Header("Transfer-Encoding", "chunked")
 	c.Header("Access-Control-Allow-Origin", "*")
@@ -464,8 +447,7 @@ func (h *OllamaAPIHandler) handleOllamaGenerateStream(c *gin.Context, openaiHand
 	}
 }
 
-// handleOllamaGenerateNonStream handles non-streaming generate responses
-func (h *OllamaAPIHandler) handleOllamaGenerateNonStream(c *gin.Context, openaiHandler *openai.OpenAIAPIHandler, openaiRequest []byte, modelName string) {
+func (h *OllamaAPIHandler) handleOllamaGenerateNonStream(c *gin.Context, _ *openai.OpenAIAPIHandler, openaiRequest []byte, modelName string) {
 	c.Header("Content-Type", "application/json")
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Server", fmt.Sprintf("ollama/%s", OllamaVersion))

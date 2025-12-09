@@ -1,15 +1,10 @@
-/**
- * @file Kiro (Amazon Q) response parser
- * @description Converts Kiro API responses (JSON and EventStream) into unified format.
- */
-
 package to_ir
 
 import (
 	"encoding/json"
 	"strings"
 
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/tidwall/gjson"
 )
 

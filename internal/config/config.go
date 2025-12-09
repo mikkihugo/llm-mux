@@ -291,6 +291,22 @@ type OpenAICompatibilityModel struct {
 	Alias string `yaml:"alias" json:"alias"`
 }
 
+// NewDefaultConfig creates a new Config with sensible defaults.
+// This allows the server to run without a config file using OAuth credentials only.
+func NewDefaultConfig() *Config {
+	return &Config{
+		Port:                   8317,
+		AuthDir:                "~/.config/llm-mux/auth",
+		DisableAuth:            true, // Local-first: no API key required by default
+		RequestRetry:           3,
+		MaxRetryInterval:       30,
+		UseCanonicalTranslator: true,
+		AmpCode: AmpCode{
+			RestrictManagementToLocalhost: true,
+		},
+	}
+}
+
 // LoadConfig reads a YAML configuration file from the given path,
 // unmarshals it into a Config struct, applies environment variable overrides,
 // and returns it.
@@ -306,38 +322,33 @@ func LoadConfig(configFile string) (*Config, error) {
 }
 
 // LoadConfigOptional reads YAML from configFile.
-// If optional is true and the file is missing, it returns an empty Config.
-// If optional is true and the file is empty or invalid, it returns an empty Config.
+// If optional is true and the file is missing, it returns a default Config.
+// If optional is true and the file is empty or invalid, it returns a default Config.
 func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	// Read the entire configuration file into memory.
 	data, err := os.ReadFile(configFile)
 	if err != nil {
 		if optional {
 			if os.IsNotExist(err) || errors.Is(err, syscall.EISDIR) {
-				// Missing and optional: return empty config (cloud deploy standby).
-				return &Config{}, nil
+				// Missing and optional: return default config (works without config file).
+				return NewDefaultConfig(), nil
 			}
 		}
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// In cloud deploy mode (optional=true), if file is empty or contains only whitespace, return empty config.
+	// In cloud deploy mode (optional=true), if file is empty or contains only whitespace, return default config.
 	if optional && len(data) == 0 {
-		return &Config{}, nil
+		return NewDefaultConfig(), nil
 	}
 
 	// Unmarshal the YAML data into the Config struct.
-	var cfg Config
-	// Set defaults before unmarshal so that absent keys keep defaults.
-	cfg.LoggingToFile = false
-	cfg.UsageStatisticsEnabled = false
-	cfg.DisableCooling = false
-	cfg.AmpCode.RestrictManagementToLocalhost = true // Default to secure: only localhost access
-	cfg.UseCanonicalTranslator = true                // Default to new IR-based translator
+	// Start with defaults so absent keys keep sensible values.
+	cfg := *NewDefaultConfig()
 	if err = yaml.Unmarshal(data, &cfg); err != nil {
 		if optional {
-			// In cloud deploy mode, if YAML parsing fails, return empty config instead of error.
-			return &Config{}, nil
+			// In cloud deploy mode, if YAML parsing fails, return default config instead of error.
+			return NewDefaultConfig(), nil
 		}
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
@@ -660,6 +671,8 @@ func sanitizeConfigForPersist(cfg *Config) *Config {
 	clone := *cfg
 	clone.SDKConfig = cfg.SDKConfig
 	clone.SDKConfig.Access = config.AccessConfig{}
+	// Clear legacy fields to prevent re-serialization after migration
+	clone.GlAPIKey = nil
 	return &clone
 }
 

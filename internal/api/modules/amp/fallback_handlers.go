@@ -204,7 +204,7 @@ func (fh *FallbackHandler) WrapHandler(handler gin.HandlerFunc) gin.HandlerFunc 
 
 // rewriteModelInBody replaces the model name in a JSON request body
 func rewriteModelInBody(body []byte, newModel string) []byte {
-	var payload map[string]interface{}
+	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
 		log.Warnf("amp model mapping: failed to parse body for rewrite: %v", err)
 		return body
@@ -226,7 +226,7 @@ func rewriteModelInBody(body []byte, newModel string) []byte {
 // extractModelFromRequest attempts to extract the model name from various request formats
 func extractModelFromRequest(body []byte, c *gin.Context) string {
 	// First try to parse from JSON body (OpenAI, Claude, etc.)
-	var payload map[string]interface{}
+	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err == nil {
 		// Check common model field names
 		if model, ok := payload["model"].(string); ok {

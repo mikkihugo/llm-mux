@@ -1,5 +1,4 @@
 // Package from_ir converts unified request format to provider-specific formats.
-// This file handles conversion to Ollama API format.
 package from_ir
 
 import (
@@ -9,13 +8,11 @@ import (
 	"time"
 
 	"github.com/nghyane/llm-mux/internal/registry"
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
-	"github.com/nghyane/llm-mux/internal/translator_new/to_ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
+	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 )
 
-// =============================================================================
 // Request Conversion (Unified → Ollama API)
-// =============================================================================
 
 // ToOllamaRequest converts unified request to Ollama API JSON format.
 // Use when sending request TO Ollama API (e.g., client sent OpenAI format, proxy to Ollama).
@@ -32,9 +29,9 @@ func ToOllamaRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 
 // convertToOllamaChatRequest converts to Ollama /api/chat request format.
 func convertToOllamaChatRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
-	m := map[string]interface{}{
+	m := map[string]any{
 		"model":    req.Model,
-		"messages": []interface{}{},
+		"messages": []any{},
 		"stream":   req.Metadata["stream"] == true, // Preserve stream flag if present
 	}
 
@@ -42,7 +39,7 @@ func convertToOllamaChatRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 	m["options"] = buildOllamaOptions(req)
 
 	// Messages
-	var messages []interface{}
+	var messages []any
 	for _, msg := range req.Messages {
 		if msgObj := convertMessageToOllama(msg); msgObj != nil {
 			messages = append(messages, msgObj)
@@ -52,15 +49,15 @@ func convertToOllamaChatRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 
 	// Tools (Ollama uses OpenAI format)
 	if len(req.Tools) > 0 {
-		tools := make([]interface{}, len(req.Tools))
+		tools := make([]any, len(req.Tools))
 		for i, t := range req.Tools {
 			params := t.Parameters
 			if params == nil {
-				params = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+				params = map[string]any{"type": "object", "properties": map[string]any{}}
 			}
-			tools[i] = map[string]interface{}{
+			tools[i] = map[string]any{
 				"type": "function",
-				"function": map[string]interface{}{
+				"function": map[string]any{
 					"name":        t.Name,
 					"description": t.Description,
 					"parameters":  params,
@@ -90,7 +87,7 @@ func convertToOllamaChatRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 
 // convertToOllamaGenerateRequest converts to Ollama /api/generate request format.
 func convertToOllamaGenerateRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
-	m := map[string]interface{}{
+	m := map[string]any{
 		"model":  req.Model,
 		"prompt": "",
 		"stream": req.Metadata["stream"] == true,
@@ -147,8 +144,8 @@ func convertToOllamaGenerateRequest(req *ir.UnifiedChatRequest) ([]byte, error) 
 }
 
 // buildOllamaOptions builds generation options map.
-func buildOllamaOptions(req *ir.UnifiedChatRequest) map[string]interface{} {
-	opts := make(map[string]interface{})
+func buildOllamaOptions(req *ir.UnifiedChatRequest) map[string]any {
+	opts := make(map[string]any)
 	if req.Temperature != nil {
 		opts["temperature"] = *req.Temperature
 	}
@@ -178,11 +175,11 @@ func buildOllamaOptions(req *ir.UnifiedChatRequest) map[string]interface{} {
 }
 
 // convertMessageToOllama converts single message to Ollama format.
-func convertMessageToOllama(msg ir.Message) map[string]interface{} {
+func convertMessageToOllama(msg ir.Message) map[string]any {
 	switch msg.Role {
 	case ir.RoleSystem:
 		if text := ir.CombineTextParts(msg); text != "" {
-			return map[string]interface{}{"role": "system", "content": text}
+			return map[string]any{"role": "system", "content": text}
 		}
 	case ir.RoleUser:
 		return buildOllamaUserMessage(msg)
@@ -195,8 +192,8 @@ func convertMessageToOllama(msg ir.Message) map[string]interface{} {
 }
 
 // buildOllamaUserMessage builds user message with text and images.
-func buildOllamaUserMessage(msg ir.Message) map[string]interface{} {
-	result := map[string]interface{}{"role": "user"}
+func buildOllamaUserMessage(msg ir.Message) map[string]any {
+	result := map[string]any{"role": "user"}
 	var text string
 	var images []string
 
@@ -224,24 +221,23 @@ func buildOllamaUserMessage(msg ir.Message) map[string]interface{} {
 	return result
 }
 
-// buildOllamaAssistantMessage builds assistant message with text and tool calls.
-func buildOllamaAssistantMessage(msg ir.Message) map[string]interface{} {
-	result := map[string]interface{}{"role": "assistant"}
-	if text := ir.CombineTextParts(msg); text != "" {
+func buildOllamaAssistantMessage(msg ir.Message) map[string]any {
+	result := map[string]any{"role": "assistant"}
+	text, reasoning := ir.CombineTextAndReasoning(msg)
+	if text != "" {
 		result["content"] = text
 	}
-	if reasoning := ir.CombineReasoningParts(msg); reasoning != "" {
+	if reasoning != "" {
 		result["thinking"] = reasoning
 	}
-
 	// Tool calls (Ollama uses OpenAI format)
 	if len(msg.ToolCalls) > 0 {
-		tcs := make([]interface{}, len(msg.ToolCalls))
+		tcs := make([]any, len(msg.ToolCalls))
 		for i, tc := range msg.ToolCalls {
-			tcs[i] = map[string]interface{}{
+			tcs[i] = map[string]any{
 				"id":   tc.ID,
 				"type": "function",
-				"function": map[string]interface{}{
+				"function": map[string]any{
 					"name":      tc.Name,
 					"arguments": tc.Args,
 				},
@@ -253,10 +249,10 @@ func buildOllamaAssistantMessage(msg ir.Message) map[string]interface{} {
 }
 
 // buildOllamaToolMessage builds tool result message.
-func buildOllamaToolMessage(msg ir.Message) map[string]interface{} {
+func buildOllamaToolMessage(msg ir.Message) map[string]any {
 	for _, part := range msg.Content {
 		if part.Type == ir.ContentTypeToolResult && part.ToolResult != nil {
-			return map[string]interface{}{
+			return map[string]any{
 				"role":         "tool",
 				"tool_call_id": part.ToolResult.ToolCallID,
 				"content":      part.ToolResult.Result,
@@ -266,27 +262,25 @@ func buildOllamaToolMessage(msg ir.Message) map[string]interface{} {
 	return nil
 }
 
-// =============================================================================
 // Response Conversion (Unified → Ollama Response)
-// =============================================================================
 
 // ToOllamaChatResponse converts messages to Ollama /api/chat response.
 // Use when sending response TO client in Ollama chat format (non-streaming).
 func ToOllamaChatResponse(messages []ir.Message, usage *ir.Usage, model string) ([]byte, error) {
 	builder := ir.NewResponseBuilder(messages, usage, model)
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"model":      model,
 		"created_at": time.Now().UTC().Format(time.RFC3339),
 		"done":       true,
-		"message": map[string]interface{}{
+		"message": map[string]any{
 			"role":    "assistant",
 			"content": "",
 		},
 	}
 
 	if msg := builder.GetLastMessage(); msg != nil {
-		msgMap := response["message"].(map[string]interface{})
+		msgMap := response["message"].(map[string]any)
 		msgMap["role"] = string(msg.Role)
 
 		if text := builder.GetTextContent(); text != "" {
@@ -325,7 +319,7 @@ func ToOllamaChatResponse(messages []ir.Message, usage *ir.Usage, model string) 
 func ToOllamaGenerateResponse(messages []ir.Message, usage *ir.Usage, model string) ([]byte, error) {
 	builder := ir.NewResponseBuilder(messages, usage, model)
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"model":       model,
 		"created_at":  time.Now().UTC().Format(time.RFC3339),
 		"done":        true,
@@ -355,17 +349,15 @@ func ToOllamaGenerateResponse(messages []ir.Message, usage *ir.Usage, model stri
 	return json.Marshal(response)
 }
 
-// =============================================================================
 // Streaming Response Conversion (Events → Ollama Chunks)
-// =============================================================================
 
 // ToOllamaChatChunk converts event to Ollama /api/chat streaming chunk.
 func ToOllamaChatChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
-	chunk := map[string]interface{}{
+	chunk := map[string]any{
 		"model":      model,
 		"created_at": time.Now().UTC().Format(time.RFC3339),
 		"done":       false,
-		"message": map[string]interface{}{
+		"message": map[string]any{
 			"role":    "assistant",
 			"content": "",
 		},
@@ -373,19 +365,19 @@ func ToOllamaChatChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 
 	switch event.Type {
 	case ir.EventTypeToken:
-		chunk["message"].(map[string]interface{})["content"] = event.Content
+		chunk["message"].(map[string]any)["content"] = event.Content
 
 	case ir.EventTypeReasoning:
 		// Ollama native API uses "thinking" field for reasoning/chain-of-thought
-		chunk["message"].(map[string]interface{})["thinking"] = event.Reasoning
+		chunk["message"].(map[string]any)["thinking"] = event.Reasoning
 
 	case ir.EventTypeToolCall:
 		if event.ToolCall != nil {
-			chunk["message"].(map[string]interface{})["tool_calls"] = []interface{}{
-				map[string]interface{}{
+			chunk["message"].(map[string]any)["tool_calls"] = []any{
+				map[string]any{
 					"id":   event.ToolCall.ID,
 					"type": "function",
-					"function": map[string]interface{}{
+					"function": map[string]any{
 						"name":      event.ToolCall.Name,
 						"arguments": event.ToolCall.Args,
 					},
@@ -396,7 +388,7 @@ func ToOllamaChatChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 	case ir.EventTypeFinish:
 		chunk["done"] = true
 		chunk["done_reason"] = mapFinishReasonToOllama(event.FinishReason)
-		chunk["message"].(map[string]interface{})["content"] = ""
+		chunk["message"].(map[string]any)["content"] = ""
 
 		if event.Usage != nil {
 			chunk["prompt_eval_count"] = event.Usage.PromptTokens
@@ -426,7 +418,7 @@ func ToOllamaChatChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 
 // ToOllamaGenerateChunk converts event to Ollama /api/generate streaming chunk.
 func ToOllamaGenerateChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
-	chunk := map[string]interface{}{
+	chunk := map[string]any{
 		"model":      model,
 		"created_at": time.Now().UTC().Format(time.RFC3339),
 		"done":       false,
@@ -474,9 +466,7 @@ func ToOllamaGenerateChunk(event ir.UnifiedEvent, model string) ([]byte, error) 
 	return append(jsonBytes, '\n'), nil
 }
 
-// =============================================================================
 // OpenAI Response → Ollama Conversion
-// =============================================================================
 
 // OpenAIToOllamaChat converts OpenAI response to Ollama chat format.
 // This is a convenience function that parses OpenAI response, then converts to Ollama.
@@ -522,9 +512,7 @@ func OpenAIChunkToOllamaGenerate(rawJSON []byte, model string) ([]byte, error) {
 	return ToOllamaGenerateChunk(events[0], model)
 }
 
-// =============================================================================
 // Utility Functions
-// =============================================================================
 
 func mapFinishReasonToOllama(reason ir.FinishReason) string {
 	switch reason {
@@ -539,9 +527,7 @@ func mapFinishReasonToOllama(reason ir.FinishReason) string {
 	}
 }
 
-// =============================================================================
 // Model Configuration (for /api/show endpoint)
-// =============================================================================
 
 // ToOllamaShowResponse generates an Ollama show response for a given model name.
 // Looks up model info from registry, falls back to sensible defaults.
@@ -568,12 +554,12 @@ func ToOllamaShowResponse(modelName string) []byte {
 		}
 	}
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		"license":    "",
 		"modelfile":  "# Modelfile for " + modelName + "\nFROM " + modelName,
 		"parameters": fmt.Sprintf("num_ctx %d\nnum_predict %d\ntemperature 0.7\ntop_p 0.9", contextLength, maxOutputTokens),
 		"template":   "{{ if .System }}{{ .System }}\n{{ end }}{{ .Prompt }}",
-		"details": map[string]interface{}{
+		"details": map[string]any{
 			"parent_model":       "",
 			"format":             "gguf",
 			"family":             "Ollama",
@@ -581,7 +567,7 @@ func ToOllamaShowResponse(modelName string) []byte {
 			"parameter_size":     "0B",
 			"quantization_level": "Q4_K_M",
 		},
-		"model_info": map[string]interface{}{
+		"model_info": map[string]any{
 			"general.architecture":           architecture,
 			"general.basename":               modelName,
 			"general.file_type":              2,

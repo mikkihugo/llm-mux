@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/nghyane/llm-mux/internal/config"
-	"github.com/nghyane/llm-mux/internal/translator_new/from_ir"
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
-	"github.com/nghyane/llm-mux/internal/translator_new/to_ir"
+	"github.com/nghyane/llm-mux/internal/translator/from_ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
+	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	sdktranslator "github.com/nghyane/llm-mux/sdk/translator"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -46,10 +46,10 @@ func sanitizeUndefinedValues(payload []byte) []byte {
 	return out
 }
 
-func cleanUndefinedRecursive(v interface{}) interface{} {
+func cleanUndefinedRecursive(v any) any {
 	switch val := v.(type) {
-	case map[string]interface{}:
-		cleaned := make(map[string]interface{})
+	case map[string]any:
+		cleaned := make(map[string]any)
 		for k, child := range val {
 			if str, ok := child.(string); ok && str == "[undefined]" {
 				continue // Skip undefined values
@@ -62,8 +62,8 @@ func cleanUndefinedRecursive(v interface{}) interface{} {
 			return nil
 		}
 		return cleaned
-	case []interface{}:
-		var cleaned []interface{}
+	case []any:
+		var cleaned []any
 		for _, item := range val {
 			if str, ok := item.(string); ok && str == "[undefined]" {
 				continue

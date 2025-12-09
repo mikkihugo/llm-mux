@@ -22,9 +22,9 @@ import (
 	"github.com/nghyane/llm-mux/internal/auth/kiro"
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/constant"
-	"github.com/nghyane/llm-mux/internal/translator_new/from_ir"
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
-	"github.com/nghyane/llm-mux/internal/translator_new/to_ir"
+	"github.com/nghyane/llm-mux/internal/translator/from_ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
+	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
 	coreauth "github.com/nghyane/llm-mux/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/nghyane/llm-mux/sdk/cliproxy/executor"
@@ -90,7 +90,7 @@ func (e *KiroExecutor) Refresh(ctx context.Context, auth *coreauth.Auth) (*corea
 		return nil, err
 	}
 	metaBytes, _ := json.Marshal(newCreds)
-	var newMeta map[string]interface{}
+	var newMeta map[string]any
 	json.Unmarshal(metaBytes, &newMeta)
 
 	updatedAuth := auth.Clone()
@@ -305,7 +305,7 @@ func (e *KiroExecutor) CountTokens(ctx context.Context, auth *coreauth.Auth, req
 	return cliproxyexecutor.Response{Payload: []byte(`{"total_tokens": 0}`)}, nil
 }
 
-func getMetaString(meta map[string]interface{}, keys ...string) string {
+func getMetaString(meta map[string]any, keys ...string) string {
 	if meta == nil {
 		return ""
 	}
@@ -317,7 +317,7 @@ func getMetaString(meta map[string]interface{}, keys ...string) string {
 	return ""
 }
 
-func parseTokenExpiry(meta map[string]interface{}) time.Time {
+func parseTokenExpiry(meta map[string]any) time.Time {
 	if meta == nil {
 		return time.Time{}
 	}

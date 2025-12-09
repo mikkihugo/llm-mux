@@ -22,7 +22,7 @@ remote-management:
   disable-control-panel: false
 
 # Authentication directory (supports ~ for home directory)
-auth-dir: "~/.cli-proxy-api"
+auth-dir: "~/.config/llm-mux/auth"
 
 # API keys for authentication
 api-keys:

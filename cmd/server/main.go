@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -35,8 +36,11 @@ var (
 	Version           = "dev"
 	Commit            = "none"
 	BuildDate         = "unknown"
-	DefaultConfigPath = ""
+	DefaultConfigPath = "~/.config/llm-mux/config.yaml"
 )
+
+//go:embed config.example.yaml
+var defaultConfigTemplate []byte
 
 // init initializes the shared logger setup.
 func init() {
@@ -64,6 +68,7 @@ func main() {
 	var antigravityLogin bool
 	var kiroLogin bool
 	var copilotLogin bool
+	var initConfig bool
 	var projectID string
 	var vertexImport string
 	var configPath string
@@ -81,6 +86,7 @@ func main() {
 	flag.BoolVar(&antigravityLogin, "antigravity-login", false, "Login to Antigravity using OAuth")
 	flag.BoolVar(&kiroLogin, "kiro-login", false, "Login to Kiro (Amazon Q) using refresh token")
 	flag.BoolVar(&copilotLogin, "copilot-login", false, "Login to GitHub Copilot using device flow")
+	flag.BoolVar(&initConfig, "init", false, "Initialize config file with default template")
 	flag.StringVar(&projectID, "project_id", "", "Project ID (Gemini only, not required)")
 	flag.StringVar(&configPath, "config", DefaultConfigPath, "Configure File Path")
 	flag.StringVar(&vertexImport, "vertex-import", "", "Import Vertex service account key JSON file")
@@ -115,6 +121,12 @@ func main() {
 
 	// Parse the command-line flags.
 	flag.Parse()
+
+	// Handle --init early, before config loading
+	if initConfig {
+		doInitConfig(configPath)
+		return
+	}
 
 	// Core application variables.
 	var err error
@@ -355,21 +367,37 @@ func main() {
 			log.Infof("git-backed token store enabled, repository path: %s", gitStoreRoot)
 		}
 	} else if configPath != "" {
+		// Expand ~ to home directory
+		if strings.HasPrefix(configPath, "~/") {
+			if home, errHome := os.UserHomeDir(); errHome == nil {
+				configPath = filepath.Join(home, configPath[2:])
+			}
+		}
 		configFilePath = configPath
-		cfg, err = config.LoadConfigOptional(configPath, isCloudDeploy)
+
+		// Auto-init on first run: create config from template if using default path and doesn't exist
+		if configPath == expandPath(DefaultConfigPath) {
+			if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+				autoInitConfig(configPath)
+			}
+		}
+
+		// Always optional=true for file-based config to support zero-config startup
+		cfg, err = config.LoadConfigOptional(configPath, true)
 	} else {
 		wd, err = os.Getwd()
 		if err != nil {
 			log.Fatalf("failed to get working directory: %v", err)
 		}
 		configFilePath = filepath.Join(wd, "config.yaml")
-		cfg, err = config.LoadConfigOptional(configFilePath, isCloudDeploy)
+		// Always optional=true for file-based config to support zero-config startup
+		cfg, err = config.LoadConfigOptional(configFilePath, true)
 	}
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
 	if cfg == nil {
-		cfg = &config.Config{}
+		cfg = config.NewDefaultConfig()
 	}
 
 	// In cloud deploy mode, check if we have a valid configuration
@@ -470,4 +498,67 @@ func main() {
 		managementasset.StartAutoUpdater(context.Background(), configFilePath)
 		cmd.StartService(cfg, configFilePath, password)
 	}
+}
+
+// expandPath expands ~ to home directory
+func expandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
+}
+
+// autoInitConfig silently creates config on first run
+func autoInitConfig(configPath string) {
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	authDir := filepath.Join(dir, "auth")
+	_ = os.MkdirAll(authDir, 0o700)
+	if err := os.WriteFile(configPath, defaultConfigTemplate, 0o600); err != nil {
+		return
+	}
+	fmt.Printf("First run: created config at %s\n", configPath)
+}
+
+// doInitConfig creates a config file from the embedded template (explicit --init)
+func doInitConfig(configPath string) {
+	configPath = expandPath(configPath)
+
+	// Check if config already exists
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Printf("Config file already exists: %s\n", configPath)
+		fmt.Println("Remove it first if you want to reinitialize.")
+		return
+	}
+
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		log.Fatalf("Failed to create config directory %s: %v", dir, err)
+	}
+
+	authDir := filepath.Join(dir, "auth")
+	if err := os.MkdirAll(authDir, 0o700); err != nil {
+		log.Fatalf("Failed to create auth directory %s: %v", authDir, err)
+	}
+
+	if err := os.WriteFile(configPath, defaultConfigTemplate, 0o600); err != nil {
+		log.Fatalf("Failed to write config file: %v", err)
+	}
+
+	fmt.Printf("Created config file: %s\n", configPath)
+	fmt.Printf("Created auth directory: %s\n", authDir)
+	fmt.Println()
+	fmt.Println("Next steps:")
+	fmt.Println("  1. Edit the config file to customize settings")
+	fmt.Println("  2. Add OAuth credentials:")
+	fmt.Println("     llm-mux --login              # Google/Gemini")
+	fmt.Println("     llm-mux --claude-login       # Claude")
+	fmt.Println("     llm-mux --codex-login        # OpenAI Codex")
+	fmt.Println("     llm-mux --copilot-login      # GitHub Copilot")
+	fmt.Println("  3. Start the server:")
+	fmt.Println("     llm-mux")
 }

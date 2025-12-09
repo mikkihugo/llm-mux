@@ -8,29 +8,44 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// CombineParts combines content parts of a specific type from a message.
-func CombineParts(msg Message, contentType ContentType) string {
+// CombineTextAndReasoning extracts both text and reasoning in a single pass.
+func CombineTextAndReasoning(msg Message) (text, reasoning string) {
+	var textParts, reasoningParts []string
+	for _, part := range msg.Content {
+		switch part.Type {
+		case ContentTypeText:
+			if part.Text != "" {
+				textParts = append(textParts, part.Text)
+			}
+		case ContentTypeReasoning:
+			if part.Reasoning != "" {
+				reasoningParts = append(reasoningParts, part.Reasoning)
+			}
+		}
+	}
+	return strings.Join(textParts, ""), strings.Join(reasoningParts, "")
+}
+
+// CombineTextParts combines all text content parts from a message.
+func CombineTextParts(msg Message) string {
 	var parts []string
 	for _, part := range msg.Content {
-		if part.Type == contentType {
-			if contentType == ContentTypeReasoning && part.Reasoning != "" {
-				parts = append(parts, part.Reasoning)
-			} else if contentType == ContentTypeText && part.Text != "" {
-				parts = append(parts, part.Text)
-			}
+		if part.Type == ContentTypeText && part.Text != "" {
+			parts = append(parts, part.Text)
 		}
 	}
 	return strings.Join(parts, "")
 }
 
-// CombineTextParts combines all text content parts from a message.
-func CombineTextParts(msg Message) string {
-	return CombineParts(msg, ContentTypeText)
-}
-
 // CombineReasoningParts combines all reasoning content parts from a message.
 func CombineReasoningParts(msg Message) string {
-	return CombineParts(msg, ContentTypeReasoning)
+	var parts []string
+	for _, part := range msg.Content {
+		if part.Type == ContentTypeReasoning && part.Reasoning != "" {
+			parts = append(parts, part.Reasoning)
+		}
+	}
+	return strings.Join(parts, "")
 }
 
 // BuildToolCallMap creates a map of tool call ID to function name.
@@ -47,7 +62,6 @@ func BuildToolCallMap(messages []Message) map[string]string {
 }
 
 // BuildToolResultsMap creates a map of tool call ID to result part.
-// Handles both OpenAI format (RoleTool messages) and Claude format (tool_result in user messages).
 func BuildToolResultsMap(messages []Message) map[string]*ToolResultPart {
 	m := make(map[string]*ToolResultPart)
 	for _, msg := range messages {
@@ -64,7 +78,6 @@ func BuildToolResultsMap(messages []Message) map[string]*ToolResultPart {
 }
 
 // BuildToolMaps creates both tool call ID→name map and tool results map in a single pass.
-// More efficient than calling BuildToolCallMap and BuildToolResultsMap separately.
 func BuildToolMaps(messages []Message) (map[string]string, map[string]*ToolResultPart) {
 	idToName := make(map[string]string)
 	results := make(map[string]*ToolResultPart)
@@ -99,30 +112,30 @@ func ValidateAndNormalizeJSON(s string) string {
 }
 
 // ParseToolCallArgs parses tool call arguments, tolerating barewords.
-func ParseToolCallArgs(argsJSON string) map[string]interface{} {
+func ParseToolCallArgs(argsJSON string) map[string]any {
 	trimmed := strings.TrimSpace(argsJSON)
 	if trimmed == "" || trimmed == "{}" {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
-	var argsObj map[string]interface{}
+	var argsObj map[string]any
 	if json.Unmarshal([]byte(trimmed), &argsObj) == nil {
 		return argsObj
 	}
 	if tolerant := tolerantParseJSONMap(trimmed); len(tolerant) > 0 {
 		return tolerant
 	}
-	return map[string]interface{}{}
+	return map[string]any{}
 }
 
 // tolerantParseJSONMap attempts to parse JSON-like string with barewords.
-func tolerantParseJSONMap(s string) map[string]interface{} {
+func tolerantParseJSONMap(s string) map[string]any {
 	start, end := strings.Index(s, "{"), strings.LastIndex(s, "}")
 	if start == -1 || end == -1 || start >= end {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	runes := []rune(s[start+1 : end])
 	n, i := len(runes), 0
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 
 	for i < n {
 		// Skip whitespace/commas
@@ -166,7 +179,7 @@ func tolerantParseJSONMap(s string) map[string]interface{} {
 		}
 
 		// Parse value
-		var value interface{}
+		var value any
 		switch runes[i] {
 		case '"':
 			valToken, ni := parseJSONStringRunes(runes, i)
@@ -180,7 +193,7 @@ func tolerantParseJSONMap(s string) map[string]interface{} {
 			if ni == -1 {
 				i = n
 			} else {
-				var anyVal interface{}
+				var anyVal any
 				if json.Unmarshal([]byte(seg), &anyVal) == nil {
 					value = anyVal
 				} else {
@@ -304,7 +317,7 @@ func captureBracketed(runes []rune, i int) (string, int) {
 	return string(runes[i:j]), j
 }
 
-func tryParseNumber(s string) (interface{}, bool) {
+func tryParseNumber(s string) (any, bool) {
 	var intVal int64
 	if _, err := fmt.Sscanf(s, "%d", &intVal); err == nil && fmt.Sprintf("%d", intVal) == s {
 		return intVal, true
@@ -331,7 +344,6 @@ func ParseOpenAIStyleToolCalls(toolCalls []gjson.Result) []ToolCall {
 	return result
 }
 
-// ========== Reasoning Format Helpers ==========
 // These helpers provide unified handling for all reasoning/thinking formats:
 // - xAI Grok: reasoning_content, reasoning_details[]
 // - OpenAI o1/o3: reasoning_text, reasoning_opaque
@@ -345,7 +357,6 @@ type ReasoningFields struct {
 }
 
 // ParseReasoningFromJSON extracts reasoning content from any supported format.
-// Checks fields in priority order: reasoning_content, reasoning_text, thinking, cot_summary, reasoning_details[].
 func ParseReasoningFromJSON(data gjson.Result) ReasoningFields {
 	var rf ReasoningFields
 
@@ -389,15 +400,13 @@ func ParseReasoningFromJSON(data gjson.Result) ReasoningFields {
 }
 
 // BuildReasoningDelta creates a delta map with all reasoning format fields populated.
-// Used for streaming chunks to ensure compatibility with all clients.
-// Note: signature/cot_id/reasoning_opaque fields are ALWAYS populated (with a default if empty)
 // because some clients (like Cursor) use these fields to detect "thinking" models and show the UI.
-func BuildReasoningDelta(reasoning, signature string) map[string]interface{} {
+func BuildReasoningDelta(reasoning, signature string) map[string]any {
 	// Use a default signature if none provided - this is critical for Cursor to show thinking UI
 	if signature == "" {
 		signature = "thinking"
 	}
-	delta := map[string]interface{}{
+	delta := map[string]any{
 		"role":              "assistant",
 		"reasoning_content": reasoning, // xAI Grok
 		"reasoning_text":    reasoning, // OpenAI o1/o3
@@ -411,8 +420,7 @@ func BuildReasoningDelta(reasoning, signature string) map[string]interface{} {
 }
 
 // AddReasoningToMessage adds all reasoning format fields to a message map.
-// Used for non-streaming responses and message history.
-func AddReasoningToMessage(msg map[string]interface{}, reasoning, signature string) {
+func AddReasoningToMessage(msg map[string]any, reasoning, signature string) {
 	if reasoning == "" {
 		return
 	}
@@ -422,8 +430,8 @@ func AddReasoningToMessage(msg map[string]interface{}, reasoning, signature stri
 	msg["cot_summary"] = reasoning       // GitHub Copilot
 
 	// xAI reasoning_details array format
-	msg["reasoning_details"] = []interface{}{
-		map[string]interface{}{
+	msg["reasoning_details"] = []any{
+		map[string]any{
 			"type":    "reasoning.summary",
 			"summary": reasoning,
 			"format":  "xai-responses-v1",

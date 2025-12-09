@@ -55,7 +55,7 @@ var ParameterSynonyms = map[string][]string{
 //
 // Key: tool name
 // Value: map of parameter name -> default value
-var ToolDefaults = map[string]map[string]interface{}{
+var ToolDefaults = map[string]map[string]any{
 	"run_terminal_cmd": {
 		"is_background": false, // Default to foreground execution
 	},

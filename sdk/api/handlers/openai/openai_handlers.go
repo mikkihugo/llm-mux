@@ -1,17 +1,11 @@
-// Package openai provides HTTP handlers for OpenAI API endpoints.
-// This package implements the OpenAI-compatible API interface, including model listing
-// and chat completion functionality. It supports both streaming and non-streaming responses,
-// and manages a pool of clients to interact with backend services.
-// The handlers translate OpenAI API requests to the appropriate backend format and
-// convert responses back to OpenAI-compatible format.
 package openai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	. "github.com/nghyane/llm-mux/internal/constant"
@@ -20,6 +14,13 @@ import (
 	"github.com/nghyane/llm-mux/sdk/api/handlers"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+)
+
+// SSE format prefixes (avoid string allocation per chunk)
+var (
+	sseEventPrefix = []byte("event:")
+	sseDataPrefix  = []byte("data: ")
+	sseNewline     = []byte("\n\n")
 )
 
 // OpenAIAPIHandler contains the handlers for OpenAI API endpoints.
@@ -251,10 +252,10 @@ func convertChatCompletionsResponseToCompletions(rawJSON []byte) []byte {
 	}
 
 	// Convert choices from chat completions to completions format
-	var choices []interface{}
+	var choices []any
 	if chatChoices := root.Get("choices"); chatChoices.Exists() && chatChoices.IsArray() {
 		chatChoices.ForEach(func(_, choice gjson.Result) bool {
-			completionsChoice := map[string]interface{}{
+			completionsChoice := map[string]any{
 				"index": choice.Get("index").Int(),
 			}
 
@@ -346,10 +347,10 @@ func convertChatCompletionsStreamChunkToCompletions(chunkData []byte) []byte {
 	}
 
 	// Convert choices from chat completions delta to completions format
-	var choices []interface{}
+	var choices []any
 	if chatChoices := root.Get("choices"); chatChoices.Exists() && chatChoices.IsArray() {
 		chatChoices.ForEach(func(_, choice gjson.Result) bool {
-			completionsChoice := map[string]interface{}{
+			completionsChoice := map[string]any{
 				"index": choice.Get("index").Int(),
 			}
 
@@ -529,7 +530,6 @@ func (h *OpenAIAPIHandler) handleCompletionsStreamingResponse(c *gin.Context, ra
 			}
 			cliCancel(execErr)
 			return
-		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }
@@ -546,14 +546,13 @@ func (h *OpenAIAPIHandler) handleStreamResult(c *gin.Context, flusher http.Flush
 				cancel(nil)
 				return
 			}
-			// Check if chunk is already in SSE format:
-			// - Claude format starts with "event:"
-			// - OpenAI format starts with "data: "
-			// If so, write it directly without wrapping
-			if len(chunk) > 6 && (string(chunk[:6]) == "event:" || string(chunk[:6]) == "data: ") {
+			// Check if chunk is already in SSE format (bytes comparison, no string alloc)
+			if len(chunk) > 6 && (bytes.HasPrefix(chunk, sseEventPrefix) || bytes.HasPrefix(chunk, sseDataPrefix)) {
 				_, _ = c.Writer.Write(chunk)
 			} else {
-				_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", string(chunk))
+				_, _ = c.Writer.Write(sseDataPrefix)
+				_, _ = c.Writer.Write(chunk)
+				_, _ = c.Writer.Write(sseNewline)
 			}
 			flusher.Flush()
 		case errMsg, ok := <-errs:
@@ -570,7 +569,6 @@ func (h *OpenAIAPIHandler) handleStreamResult(c *gin.Context, flusher http.Flush
 			}
 			cancel(execErr)
 			return
-		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }

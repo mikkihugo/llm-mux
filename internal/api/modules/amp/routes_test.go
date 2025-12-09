@@ -9,6 +9,24 @@ import (
 	"github.com/nghyane/llm-mux/sdk/api/handlers"
 )
 
+// closeNotifierRecorder wraps httptest.ResponseRecorder to implement http.CloseNotifier
+// Required for gin 1.11+ with httputil.ReverseProxy
+type closeNotifierRecorder struct {
+	*httptest.ResponseRecorder
+	closeNotify chan bool
+}
+
+func newCloseNotifierRecorder() *closeNotifierRecorder {
+	return &closeNotifierRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		closeNotify:      make(chan bool, 1),
+	}
+}
+
+func (c *closeNotifierRecorder) CloseNotify() <-chan bool {
+	return c.closeNotify
+}
+
 func TestRegisterManagementRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -63,7 +81,7 @@ func TestRegisterManagementRoutes(t *testing.T) {
 		t.Run(path.path, func(t *testing.T) {
 			proxyCalled = false
 			req := httptest.NewRequest(path.method, path.path, nil)
-			w := httptest.NewRecorder()
+			w := newCloseNotifierRecorder() // Use wrapper for CloseNotifier support
 			r.ServeHTTP(w, req)
 
 			if w.Code == http.StatusNotFound {

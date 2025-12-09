@@ -1,5 +1,4 @@
 // Package to_ir converts provider-specific API formats into unified format.
-// This file handles Ollama API requests and responses.
 package to_ir
 
 import (
@@ -8,12 +7,10 @@ import (
 
 	"github.com/tidwall/gjson"
 
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 )
 
-// =============================================================================
 // Request Parsing (Client → Unified)
-// =============================================================================
 
 // ParseOllamaRequest parses incoming Ollama API request into unified format.
 // Supports both /api/chat and /api/generate endpoints.
@@ -72,9 +69,7 @@ func ParseOllamaRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 	return req, nil
 }
 
-// =============================================================================
 // Response Parsing (Ollama API → Unified)
-// =============================================================================
 
 // ParseOllamaResponse parses non-streaming Ollama API response.
 // Supports both /api/chat and /api/generate response formats.
@@ -164,9 +159,7 @@ func ParseOllamaChunk(rawJSON []byte) ([]ir.UnifiedEvent, error) {
 	return events, nil
 }
 
-// =============================================================================
 // Helper Functions
-// =============================================================================
 
 func parseOllamaUsage(root gjson.Result) *ir.Usage {
 	p := root.Get("prompt_eval_count").Int()
@@ -302,13 +295,13 @@ func parseOllamaTool(t gjson.Result) *ir.ToolDefinition {
 		return nil
 	}
 
-	var params map[string]interface{}
+	var params map[string]any
 	if p := fn.Get("parameters"); p.Exists() {
 		json.Unmarshal([]byte(p.Raw), &params)
 		params = ir.CleanJsonSchema(params)
 	}
 	if params == nil {
-		params = make(map[string]interface{})
+		params = make(map[string]any)
 	}
 
 	return &ir.ToolDefinition{

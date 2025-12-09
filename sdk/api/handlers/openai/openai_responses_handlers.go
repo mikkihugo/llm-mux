@@ -1,9 +1,3 @@
-// Package openai provides HTTP handlers for OpenAIResponses API endpoints.
-// This package implements the OpenAIResponses-compatible API interface, including model listing
-// and chat completion functionality. It supports both streaming and non-streaming responses,
-// and manages a pool of clients to interact with backend services.
-// The handlers translate OpenAIResponses API requests to the appropriate backend format and
-// convert responses back to OpenAIResponses-compatible format.
 package openai
 
 import (
@@ -11,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	. "github.com/nghyane/llm-mux/internal/constant"
@@ -188,7 +181,6 @@ func (h *OpenAIResponsesAPIHandler) forwardResponsesStream(c *gin.Context, flush
 			}
 			cancel(execErr)
 			return
-		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }

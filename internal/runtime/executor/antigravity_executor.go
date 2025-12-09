@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/registry"
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 	cliproxyauth "github.com/nghyane/llm-mux/sdk/cliproxy/auth"
 	cliproxyexecutor "github.com/nghyane/llm-mux/sdk/cliproxy/executor"
 	log "github.com/sirupsen/logrus"
@@ -704,7 +704,7 @@ func resolveCustomAntigravityBaseURL(auth *cliproxyauth.Auth) string {
 // The projectID parameter should be the real GCP project ID from auth metadata.
 // If empty, a random project ID will be generated (legacy fallback).
 func geminiToAntigravity(modelName string, payload []byte, projectID string) []byte {
-	var root map[string]interface{}
+	var root map[string]any
 	if err := json.Unmarshal(payload, &root); err != nil {
 		return payload
 	}
@@ -720,19 +720,19 @@ func geminiToAntigravity(modelName string, payload []byte, projectID string) []b
 	root["requestId"] = generateRequestID()
 
 	// IR translator always outputs CLI format with "request" wrapper
-	request, _ := root["request"].(map[string]interface{})
+	request, _ := root["request"].(map[string]any)
 	if request == nil {
-		request = make(map[string]interface{})
+		request = make(map[string]any)
 		root["request"] = request
 	}
 	request["sessionId"] = generateSessionID()
 	delete(request, "safetySettings")
 
-	if genConfig, ok := request["generationConfig"].(map[string]interface{}); ok {
+	if genConfig, ok := request["generationConfig"].(map[string]any); ok {
 		delete(genConfig, "maxOutputTokens")
 
 		// Only gemini-3-* models support thinking; remove thinkingConfig for others or when disabled
-		if tc, ok := genConfig["thinkingConfig"].(map[string]interface{}); ok {
+		if tc, ok := genConfig["thinkingConfig"].(map[string]any); ok {
 			keepThinking := strings.HasPrefix(modelName, "gemini-3-")
 			if budget, ok := tc["thinkingBudget"].(float64); ok && budget <= 0 {
 				keepThinking = false
@@ -745,16 +745,16 @@ func geminiToAntigravity(modelName string, payload []byte, projectID string) []b
 
 	// Clean tools for Claude models
 	if strings.Contains(modelName, "claude") {
-		if tools, ok := request["tools"].([]interface{}); ok {
+		if tools, ok := request["tools"].([]any); ok {
 			for _, tool := range tools {
-				if tm, ok := tool.(map[string]interface{}); ok {
-					if fds, ok := tm["functionDeclarations"].([]interface{}); ok {
+				if tm, ok := tool.(map[string]any); ok {
+					if fds, ok := tm["functionDeclarations"].([]any); ok {
 						for _, fd := range fds {
-							if fdm, ok := fd.(map[string]interface{}); ok {
-								var schema map[string]interface{}
-								if s, ok := fdm["parametersJsonSchema"].(map[string]interface{}); ok {
+							if fdm, ok := fd.(map[string]any); ok {
+								var schema map[string]any
+								if s, ok := fdm["parametersJsonSchema"].(map[string]any); ok {
 									schema = s
-								} else if s, ok := fdm["parameters"].(map[string]interface{}); ok {
+								} else if s, ok := fdm["parameters"].(map[string]any); ok {
 									schema = s
 								}
 								if schema != nil {

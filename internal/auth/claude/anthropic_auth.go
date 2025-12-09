@@ -133,7 +133,7 @@ func (o *ClaudeAuth) ExchangeCodeForTokens(ctx context.Context, code, state stri
 	newCode, newState := o.parseCodeAndState(code)
 
 	// Prepare token exchange request
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"code":          newCode,
 		"state":         state,
 		"grant_type":    "authorization_code",
@@ -220,7 +220,7 @@ func (o *ClaudeAuth) RefreshTokens(ctx context.Context, refreshToken string) (*C
 		return nil, fmt.Errorf("refresh token is required")
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"client_id":     anthropicClientID,
 		"grant_type":    "refresh_token",
 		"refresh_token": refreshToken,

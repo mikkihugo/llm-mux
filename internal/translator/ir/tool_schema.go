@@ -175,7 +175,7 @@ func (ctx *ToolSchemaContext) NormalizeToolCallArgs(toolName, argsJSON string) s
 	}
 
 	// 2. Parse what the model sent
-	var actualArgs map[string]interface{}
+	var actualArgs map[string]any
 	if err := json.Unmarshal([]byte(argsJSON), &actualArgs); err != nil {
 		return argsJSON // If not valid JSON, return as-is (let it fail downstream)
 	}
@@ -201,7 +201,7 @@ func (ctx *ToolSchemaContext) NormalizeToolCallArgs(toolName, argsJSON string) s
 // addMissingDefaults adds default values for commonly missing required parameters.
 // Returns true if any defaults were added.
 // Uses ToolDefaults from normalization_config.go instead of hardcoded values.
-func addMissingDefaults(toolName string, args map[string]interface{}, paramTypes map[string]string) bool {
+func addMissingDefaults(toolName string, args map[string]any, paramTypes map[string]string) bool {
 	changed := false
 
 	// Use configurable defaults from normalization_config.go
@@ -223,9 +223,9 @@ func addMissingDefaults(toolName string, args map[string]interface{}, paramTypes
 // normalizeMapRecursive normalizes a map and all nested maps recursively.
 // paramTypes maps parameter names to their expected types from schema.
 // Returns the normalized map and whether any changes were made.
-func normalizeMapRecursive(args map[string]interface{}, paramTypes map[string]string) (map[string]interface{}, bool) {
+func normalizeMapRecursive(args map[string]any, paramTypes map[string]string) (map[string]any, bool) {
 	changed := false
-	normalized := make(map[string]interface{}, len(args))
+	normalized := make(map[string]any, len(args))
 
 	for key, value := range args {
 		newKey := key
@@ -244,14 +244,14 @@ func normalizeMapRecursive(args map[string]interface{}, paramTypes map[string]st
 
 		// Recursively normalize nested objects and handle type mismatches
 		switch v := value.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			// Nested object - normalize recursively
 			normalizedNested, nestedChanged := normalizeMapRecursive(v, paramTypes)
 			if nestedChanged {
 				newValue = normalizedNested
 				changed = true
 			}
-		case []interface{}:
+		case []any:
 			// Array handling:
 			// If schema expects string but model sent array, extract first element
 			if len(v) > 0 {
@@ -286,13 +286,13 @@ func normalizeMapRecursive(args map[string]interface{}, paramTypes map[string]st
 }
 
 // normalizeArrayRecursive normalizes all objects within an array recursively.
-func normalizeArrayRecursive(arr []interface{}, paramTypes map[string]string) ([]interface{}, bool) {
+func normalizeArrayRecursive(arr []any, paramTypes map[string]string) ([]any, bool) {
 	changed := false
-	normalized := make([]interface{}, len(arr))
+	normalized := make([]any, len(arr))
 
 	for i, item := range arr {
 		switch v := item.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			normalizedItem, itemChanged := normalizeMapRecursive(v, paramTypes)
 			if itemChanged {
 				normalized[i] = normalizedItem
@@ -300,7 +300,7 @@ func normalizeArrayRecursive(arr []interface{}, paramTypes map[string]string) ([
 			} else {
 				normalized[i] = item
 			}
-		case []interface{}:
+		case []any:
 			normalizedItem, itemChanged := normalizeArrayRecursive(v, paramTypes)
 			if itemChanged {
 				normalized[i] = normalizedItem

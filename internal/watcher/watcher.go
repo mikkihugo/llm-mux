@@ -162,14 +162,22 @@ func NewWatcher(configPath, authDir string, reloadCallback func(*config.Config))
 
 // Start begins watching the configuration file and authentication directory
 func (w *Watcher) Start(ctx context.Context) error {
-	// Watch the config file
-	if errAddConfig := w.watcher.Add(w.configPath); errAddConfig != nil {
-		log.Errorf("failed to watch config file %s: %v", w.configPath, errAddConfig)
-		return errAddConfig
+	// Watch the config file only if it exists (zero-config mode support)
+	if _, err := os.Stat(w.configPath); err == nil {
+		if errAddConfig := w.watcher.Add(w.configPath); errAddConfig != nil {
+			log.Errorf("failed to watch config file %s: %v", w.configPath, errAddConfig)
+			return errAddConfig
+		}
+		log.Debugf("watching config file: %s", w.configPath)
+	} else {
+		log.Infof("config file %s not found, running with defaults (use --init to create)", w.configPath)
 	}
-	log.Debugf("watching config file: %s", w.configPath)
 
-	// Watch the auth directory
+	// Ensure auth directory exists and watch it
+	if err := os.MkdirAll(w.authDir, 0o700); err != nil {
+		log.Errorf("failed to create auth directory %s: %v", w.authDir, err)
+		return err
+	}
 	if errAddAuthDir := w.watcher.Add(w.authDir); errAddAuthDir != nil {
 		log.Errorf("failed to watch auth directory %s: %v", w.authDir, errAddAuthDir)
 		return errAddAuthDir

@@ -6,30 +6,15 @@ import (
 	"strings"
 	"sync"
 	"unicode/utf8"
-	"unsafe"
 
 	"github.com/tailscale/hujson"
 	"github.com/tidwall/gjson"
 )
 
-// =============================================================================
-// Zero-Copy Helpers (for performance optimization)
-// =============================================================================
-
-// BytesToString converts []byte to string without allocation.
-// WARNING: The returned string shares memory with the input slice.
-// Do not modify the slice while the string is in use.
 func BytesToString(b []byte) string {
-	if len(b) == 0 {
-		return ""
-	}
-	return unsafe.String(&b[0], len(b))
+	return string(b)
 }
 
-// UnwrapAntigravityEnvelope extracts the inner response from Antigravity envelope.
-// Antigravity format: {"response": {...}, "traceId": "..."}
-// Returns the inner gjson.Result and true if envelope was found, otherwise returns
-// a parsed result of the original data and false.
 func UnwrapAntigravityEnvelope(rawJSON []byte) (gjson.Result, bool) {
 	rawStr := BytesToString(rawJSON)
 	if responseWrapper := gjson.Get(rawStr, "response"); responseWrapper.Exists() {
@@ -38,45 +23,28 @@ func UnwrapAntigravityEnvelope(rawJSON []byte) (gjson.Result, bool) {
 	return gjson.Parse(rawStr), false
 }
 
-// bytePool is used for ID generation to reduce allocations
 var bytePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		b := make([]byte, 24) // OpenAI tool call ID length
 		return &b
 	},
 }
 
-// =============================================================================
-// OpenAI Shared Helpers (used by both to_ir and from_ir for OpenAI formats)
-// =============================================================================
-
-// OpenAIMeta contains metadata for OpenAI response/stream generation.
-// Used to pass through original response fields from upstream provider.
 type OpenAIMeta struct {
-	ResponseID         string      // Original response ID (e.g., from Gemini)
-	CreateTime         int64       // Unix timestamp from upstream
-	NativeFinishReason string      // Original finish reason string (e.g., "STOP", "MAX_TOKENS")
-	ThoughtsTokenCount int         // Reasoning token count for completion_tokens_details
-	Logprobs           interface{} // Log probabilities from response (OpenAI format)
+	ResponseID         string
+	CreateTime         int64
+	NativeFinishReason string
+	ThoughtsTokenCount int
+	Logprobs           any
 }
 
-// EstimateTokenCount estimates token count from text.
-// Uses simple heuristic: ~4 characters per token for English, ~2 for CJK/Cyrillic.
-// This is used when provider doesn't return reasoning_tokens but we have reasoning content.
 func EstimateTokenCount(text string) int {
 	if text == "" {
 		return 0
 	}
-	// Count characters and estimate tokens
-	// Average: 1 token ≈ 4 chars for English, 1-2 chars for CJK/Cyrillic
-	runeCount := utf8.RuneCountInString(text)
-	// Use conservative estimate of ~3 chars per token (mix of languages)
-	return (runeCount + 2) / 3
+	return (utf8.RuneCountInString(text) + 2) / 3
 }
 
-// ParseOpenAIUsage parses usage from OpenAI API response.
-// Handles both Chat Completions format (prompt_tokens, completion_tokens)
-// and Responses API format (input_tokens, output_tokens).
 func ParseOpenAIUsage(u gjson.Result) *Usage {
 	if !u.Exists() {
 		return nil
@@ -90,14 +58,12 @@ func ParseOpenAIUsage(u gjson.Result) *Usage {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 
-	// Cached tokens
 	if v := u.Get("input_tokens_details.cached_tokens"); v.Exists() {
 		usage.CachedTokens = int(v.Int())
 	} else if v := u.Get("prompt_tokens_details.cached_tokens"); v.Exists() {
 		usage.CachedTokens = int(v.Int())
 	}
 
-	// Reasoning tokens
 	if v := u.Get("output_tokens_details.reasoning_tokens"); v.Exists() {
 		usage.ThoughtsTokenCount = int(v.Int())
 	} else if v := u.Get("completion_tokens_details.reasoning_tokens"); v.Exists() {
@@ -107,13 +73,10 @@ func ParseOpenAIUsage(u gjson.Result) *Usage {
 	return usage
 }
 
-// MapEffortToBudget converts reasoning effort string to token budget.
-// Used when parsing OpenAI requests with reasoning_effort parameter.
-// Returns (budget, includeThoughts) - budget is token count, includeThoughts indicates if reasoning is enabled.
 func MapEffortToBudget(effort string) (int, bool) {
 	switch effort {
 	case "none":
-		return 0, false // Reasoning disabled
+		return 0, false
 	case "low", "minimal":
 		return 1024, true
 	case "medium":
@@ -123,13 +86,10 @@ func MapEffortToBudget(effort string) (int, bool) {
 	case "xhigh":
 		return 65536, true
 	default:
-		return -1, true // auto = let provider decide
+		return -1, true
 	}
 }
 
-// MapBudgetToEffort converts token budget to reasoning effort string.
-// Used when generating OpenAI requests with reasoning_effort parameter.
-// defaultForZero is returned when budget <= 0 (typically "auto" for Chat Completions, "low" for Responses API).
 func MapBudgetToEffort(budget int, defaultForZero string) string {
 	if budget <= 0 {
 		return defaultForZero
@@ -143,7 +103,6 @@ func MapBudgetToEffort(budget int, defaultForZero string) string {
 	return "high"
 }
 
-// DefaultGeminiSafetySettings returns the default safety settings for Gemini API
 func DefaultGeminiSafetySettings() []map[string]string {
 	return []map[string]string{
 		{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "OFF"},
@@ -154,8 +113,7 @@ func DefaultGeminiSafetySettings() []map[string]string {
 	}
 }
 
-// CleanJsonSchema removes fields not supported by Gemini from JSON Schema.
-func CleanJsonSchema(schema map[string]interface{}) map[string]interface{} {
+func CleanJsonSchema(schema map[string]any) map[string]any {
 	if schema == nil {
 		return nil
 	}
@@ -166,20 +124,14 @@ func CleanJsonSchema(schema map[string]interface{}) map[string]interface{} {
 	return schema
 }
 
-// GenToolCallID generates a unique tool call ID in OpenAI format.
-// OpenAI format: call_ + 24 alphanumeric characters (e.g., call_k2QgGc9GT9WjxD76GvR0Ot8q)
 func GenToolCallID() string {
 	return fmt.Sprintf("call_%s", generateAlphanumeric(24))
 }
 
-// generateAlphanumeric generates a random alphanumeric string of specified length.
-// Uses sync.Pool for common lengths (24 for OpenAI, 20 for Claude) to reduce allocations.
 func generateAlphanumeric(length int) string {
 	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-
 	var b []byte
 	if length == 24 {
-		// Use pooled buffer for OpenAI format (most common)
 		bp := bytePool.Get().(*[]byte)
 		b = *bp
 		defer bytePool.Put(bp)
@@ -194,13 +146,10 @@ func generateAlphanumeric(length int) string {
 	return string(b)
 }
 
-// GenClaudeToolCallID generates a Claude-compatible tool call ID.
-// Claude format: toolu_ + alphanumeric string (e.g., toolu_01A2B3C4D5E6F7G8H9)
 func GenClaudeToolCallID() string {
 	return fmt.Sprintf("toolu_%s", generateAlphanumeric(20))
 }
 
-// GenerateUUID generates a UUID v4 string.
 func GenerateUUID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
@@ -209,7 +158,6 @@ func GenerateUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
-// SanitizeText cleans text for safe use in API payloads.
 func SanitizeText(s string) string {
 	if s == "" || (utf8.ValidString(s) && !hasProblematicChars(s)) {
 		return s
@@ -241,7 +189,6 @@ func hasProblematicChars(s string) bool {
 	return false
 }
 
-// MapGeminiFinishReason converts Gemini finishReason to FinishReason.
 func MapGeminiFinishReason(geminiReason string) FinishReason {
 	switch strings.ToUpper(geminiReason) {
 	case "STOP", "FINISH_REASON_UNSPECIFIED", "UNKNOWN":
@@ -251,55 +198,35 @@ func MapGeminiFinishReason(geminiReason string) FinishReason {
 	case "SAFETY", "RECITATION":
 		return FinishReasonContentFilter
 	case "MALFORMED_FUNCTION_CALL":
-		// Treat as tool_calls - we'll parse the malformed call separately
 		return FinishReasonToolCalls
 	default:
 		return FinishReasonUnknown
 	}
 }
 
-// ParseMalformedFunctionCall extracts function name and arguments from Gemini's
-// MALFORMED_FUNCTION_CALL finishMessage. This is a workaround for a known Gemini bug
-// where the model generates text-based function calls like:
-// "call:default_api:list_dir{path:\"src/server\"}" instead of proper JSON.
-// Returns (funcName, argsJSON, ok).
 func ParseMalformedFunctionCall(finishMessage string) (string, string, bool) {
-	// Format: "Malformed function call: call:default_api:func_name{key:\"value\",key2:123}"
-	// or just: "call:default_api:func_name{...}"
-
-	// Find the call pattern - look for ": call:" to find the actual function call
-	// (avoids matching "function call:" which appears earlier in the message)
 	idx := strings.Index(finishMessage, ": call:")
 	if idx != -1 {
-		idx += 2 // skip ": ", point to 'c' in "call:"
+		idx += 2
+	} else if strings.HasPrefix(finishMessage, "call:") {
+		idx = 0
 	} else {
-		// Try at the beginning of string
-		if strings.HasPrefix(finishMessage, "call:") {
-			idx = 0
-		} else {
-			// Last resort: find last occurrence of "call:"
-			idx = strings.LastIndex(finishMessage, "call:")
-			if idx == -1 {
-				return "", "", false
-			}
+		idx = strings.LastIndex(finishMessage, "call:")
+		if idx == -1 {
+			return "", "", false
 		}
 	}
 
-	// Extract from "call:" onwards
 	callPart := finishMessage[idx:]
 
-	// Find function name - format is "call:default_api:func_name{...}"
-	// Skip "call:" prefix
 	rest := callPart[5:] // skip "call:"
 
-	// Skip the API namespace (e.g., "default_api:")
 	colonIdx := strings.Index(rest, ":")
 	if colonIdx == -1 {
 		return "", "", false
 	}
 	rest = rest[colonIdx+1:] // skip "default_api:"
 
-	// Find the opening brace
 	braceIdx := strings.Index(rest, "{")
 	if braceIdx == -1 {
 		return "", "", false
@@ -308,7 +235,6 @@ func ParseMalformedFunctionCall(finishMessage string) (string, string, bool) {
 	funcName := rest[:braceIdx]
 	argsRaw := rest[braceIdx:]
 
-	// Find matching closing brace
 	depth := 0
 	endIdx := -1
 	for i, c := range argsRaw {
@@ -327,15 +253,11 @@ func ParseMalformedFunctionCall(finishMessage string) (string, string, bool) {
 	}
 	argsRaw = argsRaw[:endIdx]
 
-	// Convert the pseudo-JSON to valid JSON
-	// The format uses unquoted keys: {path:"value"} -> {"path":"value"}
 	argsJSON := convertMalformedArgsToJSON(argsRaw)
 
 	return funcName, argsJSON, true
 }
 
-// convertMalformedArgsToJSON converts Gemini's malformed args format to valid JSON.
-// Uses hujson library to handle "human JSON" (unquoted keys, trailing commas, etc.)
 // Input: {path:"src/server",count:123,flag:true}
 // Output: {"path":"src/server","count":123,"flag":true}
 func convertMalformedArgsToJSON(argsRaw string) string {
@@ -343,19 +265,15 @@ func convertMalformedArgsToJSON(argsRaw string) string {
 		return "{}"
 	}
 
-	// Use hujson to standardize the malformed JSON
 	// hujson handles: unquoted keys, trailing commas, comments, etc.
 	standardized, err := hujson.Standardize([]byte(argsRaw))
 	if err != nil {
-		// If hujson fails, fall back to manual repair
 		return convertMalformedArgsToJSONFallback(argsRaw)
 	}
 
 	return string(standardized)
 }
 
-// convertMalformedArgsToJSONFallback is a fallback parser when hujson fails.
-// Uses a simple state machine to add quotes around unquoted keys.
 func convertMalformedArgsToJSONFallback(argsRaw string) string {
 	var result strings.Builder
 	result.Grow(len(argsRaw) + 20)
@@ -392,13 +310,10 @@ func convertMalformedArgsToJSONFallback(argsRaw string) string {
 		// Outside string - look for unquoted keys
 		if c == '{' || c == ',' {
 			result.WriteByte(c)
-			// Skip whitespace
 			for i+1 < len(argsRaw) && (argsRaw[i+1] == ' ' || argsRaw[i+1] == '\t' || argsRaw[i+1] == '\n') {
 				i++
 			}
-			// Check if next is a key (not a quote, not closing brace)
 			if i+1 < len(argsRaw) && argsRaw[i+1] != '"' && argsRaw[i+1] != '}' {
-				// Find the colon to get the key
 				keyStart := i + 1
 				keyEnd := keyStart
 				for keyEnd < len(argsRaw) && argsRaw[keyEnd] != ':' && argsRaw[keyEnd] != ' ' {
@@ -421,7 +336,6 @@ func convertMalformedArgsToJSONFallback(argsRaw string) string {
 	return result.String()
 }
 
-// MapClaudeFinishReason converts Claude stop_reason to FinishReason.
 func MapClaudeFinishReason(claudeReason string) FinishReason {
 	switch claudeReason {
 	case "end_turn", "stop_sequence":
@@ -435,7 +349,6 @@ func MapClaudeFinishReason(claudeReason string) FinishReason {
 	}
 }
 
-// MapOpenAIFinishReason converts OpenAI finish_reason to FinishReason.
 func MapOpenAIFinishReason(openaiReason string) FinishReason {
 	switch openaiReason {
 	case "stop":
@@ -451,7 +364,6 @@ func MapOpenAIFinishReason(openaiReason string) FinishReason {
 	}
 }
 
-// MapFinishReasonToOpenAI converts FinishReason to OpenAI format.
 func MapFinishReasonToOpenAI(reason FinishReason) string {
 	switch reason {
 	case FinishReasonLength:
@@ -465,7 +377,6 @@ func MapFinishReasonToOpenAI(reason FinishReason) string {
 	}
 }
 
-// MapStandardRole maps standard role strings to IR Role.
 func MapStandardRole(role string) Role {
 	switch role {
 	case "system":
@@ -479,7 +390,6 @@ func MapStandardRole(role string) Role {
 	}
 }
 
-// MapFinishReasonToClaude converts FinishReason to Claude format.
 func MapFinishReasonToClaude(reason FinishReason) string {
 	switch reason {
 	case FinishReasonLength:
@@ -491,7 +401,6 @@ func MapFinishReasonToClaude(reason FinishReason) string {
 	}
 }
 
-// MapFinishReasonToGemini converts FinishReason to Gemini format.
 func MapFinishReasonToGemini(reason FinishReason) string {
 	switch reason {
 	case FinishReasonStop, FinishReasonToolCalls:
@@ -506,8 +415,8 @@ func MapFinishReasonToGemini(reason FinishReason) string {
 }
 
 // HasThoughtSignatureOnly checks if a Gemini part contains only thoughtSignature.
-func HasThoughtSignatureOnly(thoughtSig, thoughtSigSnake, text, functionCall, inlineData, inlineDataSnake interface{}) bool {
-	getString := func(r interface{}) string {
+func HasThoughtSignatureOnly(thoughtSig, thoughtSigSnake, text, functionCall, inlineData, inlineDataSnake any) bool {
+	getString := func(r any) string {
 		if r == nil {
 			return ""
 		}
@@ -516,7 +425,7 @@ func HasThoughtSignatureOnly(thoughtSig, thoughtSigSnake, text, functionCall, in
 		}
 		return ""
 	}
-	exists := func(r interface{}) bool {
+	exists := func(r any) bool {
 		if r == nil {
 			return false
 		}
@@ -536,13 +445,8 @@ func HasThoughtSignatureOnly(thoughtSig, thoughtSigSnake, text, functionCall, in
 	return !(exists(text) || exists(functionCall) || exists(inlineData) || exists(inlineDataSnake))
 }
 
-// =============================================================================
-// Claude JSON Schema Cleaning
-// =============================================================================
 
-// CleanJsonSchemaForClaude prepares JSON Schema for Claude API compatibility.
-// This is a wrapper that calls cleanSchemaForClaudeRecursive and adds required fields.
-func CleanJsonSchemaForClaude(schema map[string]interface{}) map[string]interface{} {
+func CleanJsonSchemaForClaude(schema map[string]any) map[string]any {
 	if schema == nil {
 		return nil
 	}
@@ -556,7 +460,7 @@ func CleanJsonSchemaForClaude(schema map[string]interface{}) map[string]interfac
 // cleanSchemaForClaudeRecursive recursively removes JSON Schema fields that Claude API doesn't support.
 // Claude uses JSON Schema draft 2020-12 but doesn't support all features.
 // See: https://docs.anthropic.com/en/docs/build-with-claude/tool-use
-func cleanSchemaForClaudeRecursive(schema map[string]interface{}) {
+func cleanSchemaForClaudeRecursive(schema map[string]any) {
 	if schema == nil {
 		return
 	}
@@ -565,7 +469,7 @@ func cleanSchemaForClaudeRecursive(schema map[string]interface{}) {
 	// Claude doesn't support "const" but supports "enum" with single value
 	// This preserves discriminator semantics (e.g., Pydantic Literal types)
 	if constVal, ok := schema["const"]; ok {
-		schema["enum"] = []interface{}{constVal}
+		schema["enum"] = []any{constVal}
 		delete(schema, "const")
 	}
 
@@ -610,9 +514,9 @@ func cleanSchemaForClaudeRecursive(schema map[string]interface{}) {
 	}
 
 	// Recursively clean nested objects in properties
-	if properties, ok := schema["properties"].(map[string]interface{}); ok {
+	if properties, ok := schema["properties"].(map[string]any); ok {
 		for key, prop := range properties {
-			if propMap, ok := prop.(map[string]interface{}); ok {
+			if propMap, ok := prop.(map[string]any); ok {
 				cleanSchemaForClaudeRecursive(propMap)
 				properties[key] = propMap
 			}
@@ -622,11 +526,11 @@ func cleanSchemaForClaudeRecursive(schema map[string]interface{}) {
 	// Clean items - can be object or array
 	if items := schema["items"]; items != nil {
 		switch v := items.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			cleanSchemaForClaudeRecursive(v)
-		case []interface{}:
+		case []any:
 			for i, item := range v {
-				if itemMap, ok := item.(map[string]interface{}); ok {
+				if itemMap, ok := item.(map[string]any); ok {
 					cleanSchemaForClaudeRecursive(itemMap)
 					v[i] = itemMap
 				}
@@ -634,38 +538,33 @@ func cleanSchemaForClaudeRecursive(schema map[string]interface{}) {
 		}
 	}
 
-	// Handle prefixItems (tuple validation)
-	if prefixItems, ok := schema["prefixItems"].([]interface{}); ok {
+	if prefixItems, ok := schema["prefixItems"].([]any); ok {
 		for i, item := range prefixItems {
-			if itemMap, ok := item.(map[string]interface{}); ok {
+			if itemMap, ok := item.(map[string]any); ok {
 				cleanSchemaForClaudeRecursive(itemMap)
 				prefixItems[i] = itemMap
 			}
 		}
 	}
 
-	// Handle additionalProperties if it's an object
-	if addProps, ok := schema["additionalProperties"].(map[string]interface{}); ok {
+	if addProps, ok := schema["additionalProperties"].(map[string]any); ok {
 		cleanSchemaForClaudeRecursive(addProps)
 	}
 
-	// Handle patternProperties
-	if patternProps, ok := schema["patternProperties"].(map[string]interface{}); ok {
+	if patternProps, ok := schema["patternProperties"].(map[string]any); ok {
 		for key, prop := range patternProps {
-			if propMap, ok := prop.(map[string]interface{}); ok {
+			if propMap, ok := prop.(map[string]any); ok {
 				cleanSchemaForClaudeRecursive(propMap)
 				patternProps[key] = propMap
 			}
 		}
 	}
 
-	// Handle propertyNames
-	if propNames, ok := schema["propertyNames"].(map[string]interface{}); ok {
+	if propNames, ok := schema["propertyNames"].(map[string]any); ok {
 		cleanSchemaForClaudeRecursive(propNames)
 	}
 
-	// Handle contains
-	if contains, ok := schema["contains"].(map[string]interface{}); ok {
+	if contains, ok := schema["contains"].(map[string]any); ok {
 		cleanSchemaForClaudeRecursive(contains)
 	}
 }

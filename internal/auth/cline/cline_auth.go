@@ -75,7 +75,7 @@ func (c *ClineAuth) RefreshTokens(ctx context.Context, refreshToken string) (*Cl
 		return nil, fmt.Errorf("refresh token is required")
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"refreshToken": refreshToken,
 		"grantType":    "refresh_token",
 	}

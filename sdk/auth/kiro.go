@@ -328,7 +328,7 @@ func extractRefreshTokenFromFile(path string) (string, error) {
 	}
 
 	// Try to parse as generic JSON
-	var data map[string]interface{}
+	var data map[string]any
 	if err := json.Unmarshal(content, &data); err != nil {
 		return "", err
 	}
@@ -357,7 +357,7 @@ func readFullKiroCredentials(path string) (*kiro.KiroCredentials, error) {
 		return nil, err
 	}
 
-	var data map[string]interface{}
+	var data map[string]any
 	if err := json.Unmarshal(content, &data); err != nil {
 		return nil, err
 	}
@@ -437,7 +437,7 @@ func scanExistingKiroTokens(authDir string) map[string]bool {
 			continue
 		}
 
-		var data map[string]interface{}
+		var data map[string]any
 		if err := json.Unmarshal(content, &data); err != nil {
 			continue
 		}

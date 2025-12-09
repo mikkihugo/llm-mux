@@ -1,8 +1,3 @@
-/**
- * @file Claude API request parser
- * @description Converts Claude Messages API requests into unified format.
- */
-
 package to_ir
 
 import (
@@ -10,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/tidwall/gjson"
 )
 
@@ -82,14 +77,14 @@ func ParseClaudeRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 	// Tools
 	if tools := parsed.Get("tools"); tools.Exists() && tools.IsArray() {
 		for _, t := range tools.Array() {
-			var params map[string]interface{}
+			var params map[string]any
 			if schema := t.Get("input_schema"); schema.Exists() && schema.IsObject() {
 				if err := json.Unmarshal([]byte(schema.Raw), &params); err == nil {
 					params = ir.CleanJsonSchema(params)
 				}
 			}
 			if params == nil {
-				params = make(map[string]interface{})
+				params = make(map[string]any)
 			}
 			req.Tools = append(req.Tools, ir.ToolDefinition{
 				Name: t.Get("name").String(), Description: t.Get("description").String(), Parameters: params,

@@ -1,5 +1,4 @@
 // Package from_ir converts unified request format to provider-specific formats.
-// This file handles conversion to Gemini AI Studio and Gemini CLI (Cloud Code Assist) API formats.
 package from_ir
 
 import (
@@ -12,8 +11,8 @@ import (
 	"github.com/tidwall/gjson"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
-	"github.com/nghyane/llm-mux/internal/translator_new/to_ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
+	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
 )
 
@@ -24,8 +23,8 @@ type GeminiProvider struct{}
 
 // ConvertRequest maps UnifiedChatRequest to Gemini AI Studio API JSON format.
 func (p *GeminiProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
-	root := map[string]interface{}{
-		"contents": []interface{}{},
+	root := map[string]any{
+		"contents": []any{},
 	}
 
 	if err := p.applyMessages(root, req); err != nil {
@@ -61,8 +60,8 @@ func (p *GeminiProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, err
 }
 
 // applyGenerationConfig sets temperature, topP, topK, maxTokens, thinking, modalities, and image config.
-func (p *GeminiProvider) applyGenerationConfig(root map[string]interface{}, req *ir.UnifiedChatRequest) error {
-	genConfig := make(map[string]interface{})
+func (p *GeminiProvider) applyGenerationConfig(root map[string]any, req *ir.UnifiedChatRequest) error {
+	genConfig := make(map[string]any)
 
 	if req.Temperature != nil {
 		genConfig["temperature"] = *req.Temperature
@@ -101,7 +100,7 @@ func (p *GeminiProvider) applyGenerationConfig(root map[string]interface{}, req 
 		if req.Thinking != nil {
 			if isGemini3 {
 				// Gemini 3 Pro uses thinking_level (always include thoughts for readable text)
-				tc := map[string]interface{}{
+				tc := map[string]any{
 					"includeThoughts": true,
 				}
 				switch req.Thinking.Effort {
@@ -118,14 +117,14 @@ func (p *GeminiProvider) applyGenerationConfig(root map[string]interface{}, req 
 				if budget > 0 {
 					budget = util.NormalizeThinkingBudget(req.Model, budget)
 				}
-				genConfig["thinkingConfig"] = map[string]interface{}{
+				genConfig["thinkingConfig"] = map[string]any{
 					"thinkingBudget": budget,
 					"includeThoughts": true,
 				}
 			}
 		} else if isGemini3 {
 			// Gemini 3 default: include thoughts for readable text (no thinkingBudget needed)
-			genConfig["thinkingConfig"] = map[string]interface{}{
+			genConfig["thinkingConfig"] = map[string]any{
 				"includeThoughts": true,
 			}
 		}
@@ -138,7 +137,7 @@ func (p *GeminiProvider) applyGenerationConfig(root map[string]interface{}, req 
 
 	// Image Config (standard)
 	if req.ImageConfig != nil && req.ImageConfig.AspectRatio != "" && req.Model != "gemini-2.5-flash-image-preview" {
-		imgConfig := map[string]interface{}{"aspectRatio": req.ImageConfig.AspectRatio}
+		imgConfig := map[string]any{"aspectRatio": req.ImageConfig.AspectRatio}
 		if req.ImageConfig.ImageSize != "" {
 			imgConfig["imageSize"] = req.ImageConfig.ImageSize
 		}
@@ -153,8 +152,8 @@ func (p *GeminiProvider) applyGenerationConfig(root map[string]interface{}, req 
 
 	// Function Calling Config
 	if req.FunctionCalling != nil {
-		toolConfig := make(map[string]interface{})
-		fcConfig := make(map[string]interface{})
+		toolConfig := make(map[string]any)
+		fcConfig := make(map[string]any)
 
 		if req.FunctionCalling.Mode != "" {
 			fcConfig["mode"] = req.FunctionCalling.Mode
@@ -179,8 +178,8 @@ func (p *GeminiProvider) applyGenerationConfig(root map[string]interface{}, req 
 }
 
 // applyMessages converts messages to Gemini contents format.
-func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.UnifiedChatRequest) error {
-	var contents []interface{}
+func (p *GeminiProvider) applyMessages(root map[string]any, req *ir.UnifiedChatRequest) error {
+	var contents []any
 	toolCallIDToName, toolResults := ir.BuildToolMaps(req.Messages)
 
 	for _, msg := range req.Messages {
@@ -194,24 +193,24 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 				}
 			}
 			if textContent != "" {
-				root["systemInstruction"] = map[string]interface{}{
+				root["systemInstruction"] = map[string]any{
 					"role": "user",
-					"parts": []interface{}{
-						map[string]interface{}{"text": textContent},
+					"parts": []any{
+						map[string]any{"text": textContent},
 					},
 				}
 			}
 
 		case ir.RoleUser:
-			var parts []interface{}
+			var parts []any
 			for _, part := range msg.Content {
 				switch part.Type {
 				case ir.ContentTypeText:
-					parts = append(parts, map[string]interface{}{"text": part.Text})
+					parts = append(parts, map[string]any{"text": part.Text})
 				case ir.ContentTypeImage:
 					if part.Image != nil {
-						parts = append(parts, map[string]interface{}{
-							"inlineData": map[string]interface{}{
+						parts = append(parts, map[string]any{
+							"inlineData": map[string]any{
 								"mimeType": part.Image.MimeType,
 								"data":     part.Image.Data,
 							},
@@ -220,7 +219,7 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 				}
 			}
 			if len(parts) > 0 {
-				contents = append(contents, map[string]interface{}{
+				contents = append(contents, map[string]any{
 					"role":  "user",
 					"parts": parts,
 				})
@@ -228,12 +227,12 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 
 		case ir.RoleAssistant:
 			if len(msg.ToolCalls) > 0 {
-				var parts []interface{}
+				var parts []any
 				var toolCallIDs []string
 
 				for i, tc := range msg.ToolCalls {
 					argsJSON := ir.ValidateAndNormalizeJSON(tc.Args)
-					fcMap := map[string]interface{}{
+					fcMap := map[string]any{
 						"name": tc.Name,
 						"args": json.RawMessage(argsJSON),
 					}
@@ -244,7 +243,7 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 					}
 					fcMap["id"] = toolID
 
-					part := map[string]interface{}{
+					part := map[string]any{
 						"functionCall": fcMap,
 					}
 					if tc.ThoughtSignature != "" {
@@ -257,12 +256,12 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 					toolCallIDs = append(toolCallIDs, toolID)
 				}
 
-				contents = append(contents, map[string]interface{}{
+				contents = append(contents, map[string]any{
 					"role":  "model",
 					"parts": parts,
 				})
 
-				var responseParts []interface{}
+				var responseParts []any
 
 				if debugToolCalls {
 					log.Debugf("gemini: TOOL CALL IDs in this message: %v", toolCallIDs)
@@ -299,42 +298,42 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 					}
 
 					// Construct functionResponse (include 'id' field for Claude models on Antigravity/Vertex)
-					funcResp := map[string]interface{}{
+					funcResp := map[string]any{
 						"name": name,
 						"id":   tcID,
 					}
 
 					if len(resultPart.Images) > 0 || len(resultPart.Files) > 0 {
 						// Multimodal function response
-						var responseObj interface{}
+						var responseObj any
 						if parsed := gjson.Parse(resultPart.Result); parsed.Type == gjson.JSON {
-							var jsonObj interface{}
+							var jsonObj any
 							if err := json.Unmarshal([]byte(resultPart.Result), &jsonObj); err == nil {
-								if _, isArray := jsonObj.([]interface{}); isArray {
-									responseObj = map[string]interface{}{"result": jsonObj}
+								if _, isArray := jsonObj.([]any); isArray {
+									responseObj = map[string]any{"result": jsonObj}
 								} else {
 									responseObj = jsonObj
 								}
 							} else {
-								responseObj = map[string]interface{}{"content": resultPart.Result}
+								responseObj = map[string]any{"content": resultPart.Result}
 							}
 						} else {
-							responseObj = map[string]interface{}{"content": resultPart.Result}
+							responseObj = map[string]any{"content": resultPart.Result}
 						}
 						funcResp["response"] = responseObj
 
-						var nestedParts []interface{}
+						var nestedParts []any
 						for _, img := range resultPart.Images {
-							nestedParts = append(nestedParts, map[string]interface{}{
-								"inlineData": map[string]interface{}{
+							nestedParts = append(nestedParts, map[string]any{
+								"inlineData": map[string]any{
 									"mimeType": img.MimeType,
 									"data":     img.Data,
 								},
 							})
 						}
 						for _, f := range resultPart.Files {
-							nestedParts = append(nestedParts, map[string]interface{}{
-								"inlineData": map[string]interface{}{ // Use inlineData for small files or fileData for GCS?
+							nestedParts = append(nestedParts, map[string]any{
+								"inlineData": map[string]any{ // Use inlineData for small files or fileData for GCS?
 									// The doc says "Each multimodal part must contain inlineData or fileData."
 									// If we have base64 data, use inlineData.
 									"mimeType": "application/pdf", // Default or detect? FilePart doesn't have MimeType?
@@ -346,41 +345,41 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 						if len(nestedParts) > 0 {
 						}
 					} else {
-						var responseObj interface{}
+						var responseObj any
 						if parsed := gjson.Parse(resultPart.Result); parsed.Type == gjson.JSON {
-							var jsonObj interface{}
+							var jsonObj any
 							if err := json.Unmarshal([]byte(resultPart.Result), &jsonObj); err == nil {
-								if _, isArray := jsonObj.([]interface{}); isArray {
-									responseObj = map[string]interface{}{"result": jsonObj}
+								if _, isArray := jsonObj.([]any); isArray {
+									responseObj = map[string]any{"result": jsonObj}
 								} else {
 									responseObj = jsonObj
 								}
 							} else {
-								responseObj = map[string]interface{}{"content": resultPart.Result}
+								responseObj = map[string]any{"content": resultPart.Result}
 							}
 						} else {
-							responseObj = map[string]interface{}{"content": resultPart.Result}
+							responseObj = map[string]any{"content": resultPart.Result}
 						}
 						funcResp["response"] = responseObj
 					}
 
-					responseParts = append(responseParts, map[string]interface{}{
+					responseParts = append(responseParts, map[string]any{
 						"functionResponse": funcResp,
 					})
 				}
 
 				if len(responseParts) > 0 {
-					contents = append(contents, map[string]interface{}{
+					contents = append(contents, map[string]any{
 						"role":  "user",
 						"parts": responseParts,
 					})
 				}
 			} else {
-				var parts []interface{}
+				var parts []any
 				for _, part := range msg.Content {
 					switch part.Type {
 					case ir.ContentTypeReasoning:
-						p := map[string]interface{}{
+						p := map[string]any{
 							"text":    part.Reasoning,
 							"thought": true,
 						}
@@ -389,7 +388,7 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 						}
 						parts = append(parts, p)
 					case ir.ContentTypeText:
-						p := map[string]interface{}{"text": part.Text}
+						p := map[string]any{"text": part.Text}
 						if isValidThoughtSignature(part.ThoughtSignature) {
 							p["thoughtSignature"] = part.ThoughtSignature
 						}
@@ -398,7 +397,7 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 				}
 
 				if len(parts) > 0 {
-					contents = append(contents, map[string]interface{}{
+					contents = append(contents, map[string]any{
 						"role":  "model",
 						"parts": parts,
 					})
@@ -414,9 +413,9 @@ func (p *GeminiProvider) applyMessages(root map[string]interface{}, req *ir.Unif
 }
 
 // applyTools converts tool definitions to Gemini functionDeclarations format.
-func (p *GeminiProvider) applyTools(root map[string]interface{}, req *ir.UnifiedChatRequest) error {
+func (p *GeminiProvider) applyTools(root map[string]any, req *ir.UnifiedChatRequest) error {
 	// Extract built-in tools from Metadata (using ir.Meta* constants)
-	var googleSearch, googleSearchRetrieval, codeExecution, urlContext interface{}
+	var googleSearch, googleSearchRetrieval, codeExecution, urlContext any
 	if req.Metadata != nil {
 		if gs, ok := req.Metadata[ir.MetaGoogleSearch]; ok {
 			googleSearch = gs
@@ -437,19 +436,19 @@ func (p *GeminiProvider) applyTools(root map[string]interface{}, req *ir.Unified
 		return nil
 	}
 
-	toolNode := make(map[string]interface{})
+	toolNode := make(map[string]any)
 
 	if len(req.Tools) > 0 {
-		funcs := make([]interface{}, len(req.Tools))
+		funcs := make([]any, len(req.Tools))
 		for i, t := range req.Tools {
-			funcDecl := map[string]interface{}{
+			funcDecl := map[string]any{
 				"name":        t.Name,
 				"description": t.Description,
 			}
 			if len(t.Parameters) == 0 {
-				funcDecl["parameters"] = map[string]interface{}{
+				funcDecl["parameters"] = map[string]any{
 					"type":       "object",
-					"properties": map[string]interface{}{},
+					"properties": map[string]any{},
 				}
 			} else {
 				// Use "parameters" instead of "parametersJsonSchema" for broad compatibility
@@ -475,7 +474,7 @@ func (p *GeminiProvider) applyTools(root map[string]interface{}, req *ir.Unified
 		toolNode["urlContext"] = urlContext
 	}
 
-	root["tools"] = []interface{}{toolNode}
+	root["tools"] = []any{toolNode}
 
 	// Set toolConfig.functionCallingConfig.mode based on ToolChoice from request.
 	// - "none" -> NONE (don't call functions)
@@ -493,8 +492,8 @@ func (p *GeminiProvider) applyTools(root map[string]interface{}, req *ir.Unified
 		case "auto", "":
 			mode = "AUTO"
 		}
-		root["toolConfig"] = map[string]interface{}{
-			"functionCallingConfig": map[string]interface{}{
+		root["toolConfig"] = map[string]any{
+			"functionCallingConfig": map[string]any{
 				"mode": mode,
 			},
 		}
@@ -504,11 +503,11 @@ func (p *GeminiProvider) applyTools(root map[string]interface{}, req *ir.Unified
 }
 
 // applySafetySettings sets safety settings or applies defaults.
-func (p *GeminiProvider) applySafetySettings(root map[string]interface{}, req *ir.UnifiedChatRequest) {
+func (p *GeminiProvider) applySafetySettings(root map[string]any, req *ir.UnifiedChatRequest) {
 	if len(req.SafetySettings) > 0 {
-		settings := make([]interface{}, len(req.SafetySettings))
+		settings := make([]any, len(req.SafetySettings))
 		for i, s := range req.SafetySettings {
-			settings[i] = map[string]interface{}{
+			settings[i] = map[string]any{
 				"category":  s.Category,
 				"threshold": s.Threshold,
 			}
@@ -521,8 +520,8 @@ func (p *GeminiProvider) applySafetySettings(root map[string]interface{}, req *i
 }
 
 // fixImageAspectRatioForPreview handles gemini-2.5-flash-image-preview requirements.
-func (p *GeminiProvider) fixImageAspectRatioForPreview(root map[string]interface{}, aspectRatio string) {
-	contents, ok := root["contents"].([]interface{})
+func (p *GeminiProvider) fixImageAspectRatioForPreview(root map[string]any, aspectRatio string) {
+	contents, ok := root["contents"].([]any)
 	if !ok || len(contents) == 0 {
 		return
 	}
@@ -530,10 +529,10 @@ func (p *GeminiProvider) fixImageAspectRatioForPreview(root map[string]interface
 	// Check if there's already an image
 	hasInlineData := false
 	for _, content := range contents {
-		if cMap, ok := content.(map[string]interface{}); ok {
-			if parts, ok := cMap["parts"].([]interface{}); ok {
+		if cMap, ok := content.(map[string]any); ok {
+			if parts, ok := cMap["parts"].([]any); ok {
 				for _, part := range parts {
-					if pMap, ok := part.(map[string]interface{}); ok {
+					if pMap, ok := part.(map[string]any); ok {
 						if _, exists := pMap["inlineData"]; exists {
 							hasInlineData = true
 							break
@@ -558,15 +557,15 @@ func (p *GeminiProvider) fixImageAspectRatioForPreview(root map[string]interface
 	}
 
 	// Create new parts for the first content message
-	firstContent := contents[0].(map[string]interface{})
-	existingParts := firstContent["parts"].([]interface{})
+	firstContent := contents[0].(map[string]any)
+	existingParts := firstContent["parts"].([]any)
 
-	newParts := []interface{}{
-		map[string]interface{}{
+	newParts := []any{
+		map[string]any{
 			"text": "Based on the following requirements, create an image within the uploaded picture. The new content *MUST* completely cover the entire area of the original picture, maintaining its exact proportions, and *NO* blank areas should appear.",
 		},
-		map[string]interface{}{
-			"inlineData": map[string]interface{}{
+		map[string]any{
+			"inlineData": map[string]any{
 				"mime_type": "image/png",
 				"data":      emptyImageBase64,
 			},
@@ -576,11 +575,11 @@ func (p *GeminiProvider) fixImageAspectRatioForPreview(root map[string]interface
 	firstContent["parts"] = newParts
 
 	// Update generation config
-	if genConfig, ok := root["generationConfig"].(map[string]interface{}); ok {
+	if genConfig, ok := root["generationConfig"].(map[string]any); ok {
 		genConfig["responseModalities"] = []string{"IMAGE", "TEXT"}
 		delete(genConfig, "imageConfig")
 	} else {
-		root["generationConfig"] = map[string]interface{}{
+		root["generationConfig"] = map[string]any{
 			"responseModalities": []string{"IMAGE", "TEXT"},
 		}
 	}
@@ -592,15 +591,15 @@ func (p *GeminiProvider) fixImageAspectRatioForPreview(root map[string]interface
 func ToGeminiResponse(messages []ir.Message, usage *ir.Usage, model string) ([]byte, error) {
 	builder := ir.NewResponseBuilder(messages, usage, model)
 
-	response := map[string]interface{}{
-		"candidates":   []interface{}{},
+	response := map[string]any{
+		"candidates":   []any{},
 		"modelVersion": model,
 	}
 
 	if builder.HasContent() {
-		response["candidates"] = []interface{}{
-			map[string]interface{}{
-				"content": map[string]interface{}{
+		response["candidates"] = []any{
+			map[string]any{
+				"content": map[string]any{
 					"role":  "model",
 					"parts": builder.BuildGeminiContentParts(),
 				},
@@ -610,7 +609,7 @@ func ToGeminiResponse(messages []ir.Message, usage *ir.Usage, model string) ([]b
 	}
 
 	if usage != nil {
-		response["usageMetadata"] = map[string]interface{}{
+		response["usageMetadata"] = map[string]any{
 			"promptTokenCount":     usage.PromptTokens,
 			"candidatesTokenCount": usage.CompletionTokens,
 			"totalTokenCount":      usage.TotalTokens,
@@ -622,40 +621,40 @@ func ToGeminiResponse(messages []ir.Message, usage *ir.Usage, model string) ([]b
 
 // ToGeminiChunk converts a single event to Gemini streaming chunk.
 func ToGeminiChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
-	chunk := map[string]interface{}{
-		"candidates":   []interface{}{},
+	chunk := map[string]any{
+		"candidates":   []any{},
 		"modelVersion": model,
 	}
 
-	candidate := map[string]interface{}{
-		"content": map[string]interface{}{
+	candidate := map[string]any{
+		"content": map[string]any{
 			"role":  "model",
-			"parts": []interface{}{},
+			"parts": []any{},
 		},
 	}
 
 	switch event.Type {
 	case ir.EventTypeToken:
-		candidate["content"].(map[string]interface{})["parts"] = []interface{}{
-			map[string]interface{}{"text": event.Content},
+		candidate["content"].(map[string]any)["parts"] = []any{
+			map[string]any{"text": event.Content},
 		}
 
 	case ir.EventTypeReasoning:
-		candidate["content"].(map[string]interface{})["parts"] = []interface{}{
-			map[string]interface{}{"text": event.Reasoning, "thought": true},
+		candidate["content"].(map[string]any)["parts"] = []any{
+			map[string]any{"text": event.Reasoning, "thought": true},
 		}
 
 	case ir.EventTypeToolCall:
 		if event.ToolCall != nil {
-			var argsObj interface{} = map[string]interface{}{}
+			var argsObj any = map[string]any{}
 			if event.ToolCall.Args != "" && event.ToolCall.Args != "{}" {
 				if err := json.Unmarshal([]byte(event.ToolCall.Args), &argsObj); err != nil {
-					argsObj = map[string]interface{}{}
+					argsObj = map[string]any{}
 				}
 			}
-			candidate["content"].(map[string]interface{})["parts"] = []interface{}{
-				map[string]interface{}{
-					"functionCall": map[string]interface{}{
+			candidate["content"].(map[string]any)["parts"] = []any{
+				map[string]any{
+					"functionCall": map[string]any{
 						"name": event.ToolCall.Name,
 						"args": argsObj,
 					},
@@ -665,9 +664,9 @@ func ToGeminiChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 
 	case ir.EventTypeImage:
 		if event.Image != nil {
-			candidate["content"].(map[string]interface{})["parts"] = []interface{}{
-				map[string]interface{}{
-					"inlineData": map[string]interface{}{
+			candidate["content"].(map[string]any)["parts"] = []any{
+				map[string]any{
+					"inlineData": map[string]any{
 						"mimeType": event.Image.MimeType,
 						"data":     event.Image.Data,
 					},
@@ -677,31 +676,31 @@ func ToGeminiChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 
 	case ir.EventTypeCodeExecution:
 		if event.CodeExecution != nil {
-			var part map[string]interface{}
+			var part map[string]any
 			if event.CodeExecution.Code != "" {
 				// Executable code
-				part = map[string]interface{}{
-					"executableCode": map[string]interface{}{
+				part = map[string]any{
+					"executableCode": map[string]any{
 						"language": event.CodeExecution.Language,
 						"code":     event.CodeExecution.Code,
 					},
 				}
 			} else {
 				// Code execution result
-				part = map[string]interface{}{
-					"codeExecutionResult": map[string]interface{}{
+				part = map[string]any{
+					"codeExecutionResult": map[string]any{
 						"outcome": event.CodeExecution.Outcome,
 						"output":  event.CodeExecution.Output,
 					},
 				}
 			}
-			candidate["content"].(map[string]interface{})["parts"] = []interface{}{part}
+			candidate["content"].(map[string]any)["parts"] = []any{part}
 		}
 
 	case ir.EventTypeFinish:
 		candidate["finishReason"] = "STOP"
 		if event.Usage != nil {
-			chunk["usageMetadata"] = map[string]interface{}{
+			chunk["usageMetadata"] = map[string]any{
 				"promptTokenCount":     event.Usage.PromptTokens,
 				"candidatesTokenCount": event.Usage.CompletionTokens,
 				"totalTokenCount":      event.Usage.TotalTokens,
@@ -715,7 +714,7 @@ func ToGeminiChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 		return nil, nil
 	}
 
-	chunk["candidates"] = []interface{}{candidate}
+	chunk["candidates"] = []any{candidate}
 
 	jsonBytes, err := json.Marshal(chunk)
 	if err != nil {
@@ -741,7 +740,7 @@ func (p *GeminiCLIProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, 
 	}
 
 	// Wrap in CLI envelope: {"project":"", "model":"...", "request":{...}}
-	envelope := map[string]interface{}{
+	envelope := map[string]any{
 		"project": "",
 		"model":   "",
 		"request": json.RawMessage(geminiJSON),

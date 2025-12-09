@@ -1,8 +1,3 @@
-/**
- * @file Claude API request converter
- * @description Converts unified requests to Claude Messages API format.
- */
-
 package from_ir
 
 import (
@@ -13,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/tidwall/gjson"
 )
 
@@ -74,11 +69,11 @@ func (p *ClaudeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, err
 	}
 	userID := fmt.Sprintf("user_%s_account_%s_session_%s", claudeUser, claudeAccount, claudeSession)
 
-	root := map[string]interface{}{
+	root := map[string]any{
 		"model":      req.Model,
 		"max_tokens": ir.ClaudeDefaultMaxTokens,
-		"metadata":   map[string]interface{}{"user_id": userID},
-		"messages":   []interface{}{},
+		"metadata":   map[string]any{"user_id": userID},
+		"messages":   []any{},
 	}
 
 	if req.MaxTokens != nil {
@@ -98,7 +93,7 @@ func (p *ClaudeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, err
 	}
 
 	if req.Thinking != nil {
-		thinking := map[string]interface{}{}
+		thinking := map[string]any{}
 		if req.Thinking.IncludeThoughts && req.Thinking.Budget != 0 {
 			thinking["type"] = "enabled"
 			if req.Thinking.Budget > 0 {
@@ -112,7 +107,7 @@ func (p *ClaudeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, err
 		}
 	}
 
-	var messages []interface{}
+	var messages []any
 	for _, msg := range req.Messages {
 		switch msg.Role {
 		case ir.RoleSystem:
@@ -121,18 +116,18 @@ func (p *ClaudeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, err
 			}
 		case ir.RoleUser:
 			if parts := buildClaudeContentParts(msg, false); len(parts) > 0 {
-				messages = append(messages, map[string]interface{}{"role": ir.ClaudeRoleUser, "content": parts})
+				messages = append(messages, map[string]any{"role": ir.ClaudeRoleUser, "content": parts})
 			}
 		case ir.RoleAssistant:
 			if parts := buildClaudeContentParts(msg, true); len(parts) > 0 {
-				messages = append(messages, map[string]interface{}{"role": ir.ClaudeRoleAssistant, "content": parts})
+				messages = append(messages, map[string]any{"role": ir.ClaudeRoleAssistant, "content": parts})
 			}
 		case ir.RoleTool:
 			for _, part := range msg.Content {
 				if part.Type == ir.ContentTypeToolResult && part.ToolResult != nil {
-					messages = append(messages, map[string]interface{}{
+					messages = append(messages, map[string]any{
 						"role": ir.ClaudeRoleUser,
-						"content": []interface{}{map[string]interface{}{
+						"content": []any{map[string]any{
 							"type": ir.ClaudeBlockToolResult, "tool_use_id": part.ToolResult.ToolCallID, "content": part.ToolResult.Result,
 						}},
 					})
@@ -143,14 +138,14 @@ func (p *ClaudeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, err
 	root["messages"] = messages
 
 	if len(req.Tools) > 0 {
-		var tools []interface{}
+		var tools []any
 		for _, t := range req.Tools {
-			tool := map[string]interface{}{"name": t.Name, "description": t.Description}
+			tool := map[string]any{"name": t.Name, "description": t.Description}
 			if len(t.Parameters) > 0 {
 				tool["input_schema"] = ir.CleanJsonSchemaForClaude(copyMap(t.Parameters))
 			} else {
-				tool["input_schema"] = map[string]interface{}{
-					"type": "object", "properties": map[string]interface{}{}, "additionalProperties": false, "$schema": "http://json-schema.org/draft-07/schema#",
+				tool["input_schema"] = map[string]any{
+					"type": "object", "properties": map[string]any{}, "additionalProperties": false, "$schema": "http://json-schema.org/draft-07/schema#",
 				}
 			}
 			tools = append(tools, tool)
@@ -159,7 +154,7 @@ func (p *ClaudeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, err
 	}
 
 	if len(req.Metadata) > 0 {
-		meta := root["metadata"].(map[string]interface{})
+		meta := root["metadata"].(map[string]any)
 		for k, v := range req.Metadata {
 			meta[k] = v
 		}
@@ -236,12 +231,12 @@ func ToClaudeSSE(event ir.UnifiedEvent, model, messageID string, state *ClaudeSt
 	if state != nil && !state.MessageStartSent {
 		state.MessageStartSent = true
 		state.Model, state.MessageID = model, messageID
-		result.WriteString(formatSSE(ir.ClaudeSSEMessageStart, map[string]interface{}{
+		result.WriteString(formatSSE(ir.ClaudeSSEMessageStart, map[string]any{
 			"type": ir.ClaudeSSEMessageStart,
-			"message": map[string]interface{}{
+			"message": map[string]any{
 				"id": messageID, "type": "message", "role": ir.ClaudeRoleAssistant,
-				"content": []interface{}{}, "model": model, "stop_reason": nil, "stop_sequence": nil,
-				"usage": map[string]interface{}{"input_tokens": 0, "output_tokens": 0},
+				"content": []any{}, "model": model, "stop_reason": nil, "stop_sequence": nil,
+				"usage": map[string]any{"input_tokens": 0, "output_tokens": 0},
 			},
 		}))
 	}
@@ -264,8 +259,8 @@ func ToClaudeSSE(event ir.UnifiedEvent, model, messageID string, state *ClaudeSt
 		}
 		result.WriteString(emitFinish(event.Usage, state))
 	case ir.EventTypeError:
-		result.WriteString(formatSSE(ir.ClaudeSSEError, map[string]interface{}{
-			"type": ir.ClaudeSSEError, "error": map[string]interface{}{"type": "api_error", "message": errMsg(event.Error)},
+		result.WriteString(formatSSE(ir.ClaudeSSEError, map[string]any{
+			"type": ir.ClaudeSSEError, "error": map[string]any{"type": "api_error", "message": errMsg(event.Error)},
 		}))
 	}
 
@@ -278,7 +273,7 @@ func ToClaudeSSE(event ir.UnifiedEvent, model, messageID string, state *ClaudeSt
 // ToClaudeResponse converts messages to complete Claude response.
 func ToClaudeResponse(messages []ir.Message, usage *ir.Usage, model, messageID string) ([]byte, error) {
 	builder := ir.NewResponseBuilder(messages, usage, model)
-	response := map[string]interface{}{
+	response := map[string]any{
 		"id": messageID, "type": "message", "role": ir.ClaudeRoleAssistant,
 		"content": builder.BuildClaudeContentParts(), "model": model, "stop_reason": ir.ClaudeStopEndTurn,
 	}
@@ -286,33 +281,33 @@ func ToClaudeResponse(messages []ir.Message, usage *ir.Usage, model, messageID s
 		response["stop_reason"] = ir.ClaudeStopToolUse
 	}
 	if usage != nil {
-		response["usage"] = map[string]interface{}{"input_tokens": usage.PromptTokens, "output_tokens": usage.CompletionTokens}
+		response["usage"] = map[string]any{"input_tokens": usage.PromptTokens, "output_tokens": usage.CompletionTokens}
 	}
 	return json.Marshal(response)
 }
 
-func buildClaudeContentParts(msg ir.Message, includeToolCalls bool) []interface{} {
-	var parts []interface{}
+func buildClaudeContentParts(msg ir.Message, includeToolCalls bool) []any {
+	var parts []any
 	for _, p := range msg.Content {
 		switch p.Type {
 		case ir.ContentTypeReasoning:
 			if p.Reasoning != "" {
-				parts = append(parts, map[string]interface{}{"type": ir.ClaudeBlockThinking, "thinking": p.Reasoning})
+				parts = append(parts, map[string]any{"type": ir.ClaudeBlockThinking, "thinking": p.Reasoning})
 			}
 		case ir.ContentTypeText:
 			if p.Text != "" {
-				parts = append(parts, map[string]interface{}{"type": ir.ClaudeBlockText, "text": p.Text})
+				parts = append(parts, map[string]any{"type": ir.ClaudeBlockText, "text": p.Text})
 			}
 		case ir.ContentTypeImage:
 			if p.Image != nil {
-				parts = append(parts, map[string]interface{}{
+				parts = append(parts, map[string]any{
 					"type":   ir.ClaudeBlockImage,
-					"source": map[string]interface{}{"type": "base64", "media_type": p.Image.MimeType, "data": p.Image.Data},
+					"source": map[string]any{"type": "base64", "media_type": p.Image.MimeType, "data": p.Image.Data},
 				})
 			}
 		case ir.ContentTypeToolResult:
 			if p.ToolResult != nil {
-				parts = append(parts, map[string]interface{}{
+				parts = append(parts, map[string]any{
 					"type": ir.ClaudeBlockToolResult, "tool_use_id": p.ToolResult.ToolCallID, "content": p.ToolResult.Result,
 				})
 			}
@@ -320,7 +315,7 @@ func buildClaudeContentParts(msg ir.Message, includeToolCalls bool) []interface{
 	}
 	if includeToolCalls {
 		for _, tc := range msg.ToolCalls {
-			toolUse := map[string]interface{}{"type": ir.ClaudeBlockToolUse, "id": toClaudeToolID(tc.ID), "name": tc.Name}
+			toolUse := map[string]any{"type": ir.ClaudeBlockToolUse, "id": toClaudeToolID(tc.ID), "name": tc.Name}
 			toolUse["input"] = ir.ParseToolCallArgs(tc.Args)
 			parts = append(parts, toolUse)
 		}
@@ -328,7 +323,7 @@ func buildClaudeContentParts(msg ir.Message, includeToolCalls bool) []interface{
 	return parts
 }
 
-func formatSSE(eventType string, data interface{}) string {
+func formatSSE(eventType string, data any) string {
 	jsonData, _ := json.Marshal(data)
 	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, string(jsonData))
 }
@@ -340,15 +335,15 @@ func emitTextDelta(text string, state *ClaudeStreamState) string {
 		idx = state.TextBlockIndex
 		if !state.TextBlockStarted {
 			state.TextBlockStarted = true
-			result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStart, map[string]interface{}{
+			result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStart, map[string]any{
 				"type": ir.ClaudeSSEContentBlockStart, "index": idx,
-				"content_block": map[string]interface{}{"type": ir.ClaudeBlockText, "text": ""},
+				"content_block": map[string]any{"type": ir.ClaudeBlockText, "text": ""},
 			}))
 		}
 	}
-	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockDelta, map[string]interface{}{
+	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockDelta, map[string]any{
 		"type": ir.ClaudeSSEContentBlockDelta, "index": idx,
-		"delta": map[string]interface{}{"type": "text_delta", "text": text},
+		"delta": map[string]any{"type": "text_delta", "text": text},
 	}))
 	return result.String()
 }
@@ -360,15 +355,15 @@ func emitThinkingDelta(thinking string, state *ClaudeStreamState) string {
 		idx = state.TextBlockIndex
 		if !state.TextBlockStarted {
 			state.TextBlockStarted = true
-			result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStart, map[string]interface{}{
+			result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStart, map[string]any{
 				"type": ir.ClaudeSSEContentBlockStart, "index": idx,
-				"content_block": map[string]interface{}{"type": ir.ClaudeBlockThinking, "thinking": ""},
+				"content_block": map[string]any{"type": ir.ClaudeBlockThinking, "thinking": ""},
 			}))
 		}
 	}
-	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockDelta, map[string]interface{}{
+	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockDelta, map[string]any{
 		"type": ir.ClaudeSSEContentBlockDelta, "index": idx,
-		"delta": map[string]interface{}{"type": "thinking_delta", "thinking": thinking},
+		"delta": map[string]any{"type": "thinking_delta", "thinking": thinking},
 	}))
 	return result.String()
 }
@@ -377,7 +372,7 @@ func emitToolCall(tc *ir.ToolCall, state *ClaudeStreamState) string {
 	var result strings.Builder
 	if state != nil && state.TextBlockStarted && !state.TextBlockStopped {
 		state.TextBlockStopped = true
-		result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStop, map[string]interface{}{"type": ir.ClaudeSSEContentBlockStop, "index": state.TextBlockIndex}))
+		result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStop, map[string]any{"type": ir.ClaudeSSEContentBlockStop, "index": state.TextBlockIndex}))
 	}
 
 	idx := 1
@@ -387,20 +382,20 @@ func emitToolCall(tc *ir.ToolCall, state *ClaudeStreamState) string {
 		state.ToolBlockCount++
 	}
 
-	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStart, map[string]interface{}{
+	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStart, map[string]any{
 		"type": ir.ClaudeSSEContentBlockStart, "index": idx,
-		"content_block": map[string]interface{}{"type": ir.ClaudeBlockToolUse, "id": toClaudeToolID(tc.ID), "name": tc.Name, "input": map[string]interface{}{}},
+		"content_block": map[string]any{"type": ir.ClaudeBlockToolUse, "id": toClaudeToolID(tc.ID), "name": tc.Name, "input": map[string]any{}},
 	}))
 
 	args := tc.Args
 	if args == "" {
 		args = "{}"
 	}
-	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockDelta, map[string]interface{}{
+	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockDelta, map[string]any{
 		"type": ir.ClaudeSSEContentBlockDelta, "index": idx,
-		"delta": map[string]interface{}{"type": "input_json_delta", "partial_json": args},
+		"delta": map[string]any{"type": "input_json_delta", "partial_json": args},
 	}))
-	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStop, map[string]interface{}{"type": ir.ClaudeSSEContentBlockStop, "index": idx}))
+	result.WriteString(formatSSE(ir.ClaudeSSEContentBlockStop, map[string]any{"type": ir.ClaudeSSEContentBlockStop, "index": idx}))
 	return result.String()
 }
 
@@ -410,12 +405,12 @@ func emitFinish(usage *ir.Usage, state *ClaudeStreamState) string {
 	if state != nil && state.HasToolCalls {
 		stopReason = ir.ClaudeStopToolUse
 	}
-	delta := map[string]interface{}{"type": ir.ClaudeSSEMessageDelta, "delta": map[string]interface{}{"stop_reason": stopReason}}
+	delta := map[string]any{"type": ir.ClaudeSSEMessageDelta, "delta": map[string]any{"stop_reason": stopReason}}
 	if usage != nil {
-		delta["usage"] = map[string]interface{}{"input_tokens": usage.PromptTokens, "output_tokens": usage.CompletionTokens}
+		delta["usage"] = map[string]any{"input_tokens": usage.PromptTokens, "output_tokens": usage.CompletionTokens}
 	}
 	result.WriteString(formatSSE(ir.ClaudeSSEMessageDelta, delta))
-	result.WriteString(formatSSE(ir.ClaudeSSEMessageStop, map[string]interface{}{"type": ir.ClaudeSSEMessageStop}))
+	result.WriteString(formatSSE(ir.ClaudeSSEMessageStop, map[string]any{"type": ir.ClaudeSSEMessageStop}))
 	return result.String()
 }
 
@@ -426,18 +421,18 @@ func errMsg(err error) string {
 	return "Unknown error"
 }
 
-func copyMap(m map[string]interface{}) map[string]interface{} {
+func copyMap(m map[string]any) map[string]any {
 	if m == nil {
 		return nil
 	}
-	result := make(map[string]interface{}, len(m))
+	result := make(map[string]any, len(m))
 	for k, v := range m {
-		if nested, ok := v.(map[string]interface{}); ok {
+		if nested, ok := v.(map[string]any); ok {
 			result[k] = copyMap(nested)
-		} else if arr, ok := v.([]interface{}); ok {
-			newArr := make([]interface{}, len(arr))
+		} else if arr, ok := v.([]any); ok {
+			newArr := make([]any, len(arr))
 			for i, item := range arr {
-				if nestedMap, ok := item.(map[string]interface{}); ok {
+				if nestedMap, ok := item.(map[string]any); ok {
 					newArr[i] = copyMap(nestedMap)
 				} else {
 					newArr[i] = item

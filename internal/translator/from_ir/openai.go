@@ -1,5 +1,4 @@
 // Package from_ir converts unified request format to provider-specific formats.
-// This file handles conversion TO OpenAI API formats (both Chat Completions and Responses API).
 package from_ir
 
 import (
@@ -7,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nghyane/llm-mux/internal/translator_new/ir"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 )
 
 // OpenAIRequestFormat specifies which OpenAI API format to generate.
@@ -36,9 +35,9 @@ func ToOpenAIRequestFmt(req *ir.UnifiedChatRequest, format OpenAIRequestFormat) 
 // convertToChatCompletionsRequest builds JSON for /v1/chat/completions endpoint.
 // This is the traditional OpenAI format used by most clients (Cursor, Cline, etc.).
 func convertToChatCompletionsRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
-	m := map[string]interface{}{
+	m := map[string]any{
 		"model":    req.Model,
-		"messages": []interface{}{},
+		"messages": []any{},
 	}
 	if req.Temperature != nil {
 		m["temperature"] = *req.Temperature
@@ -56,7 +55,7 @@ func convertToChatCompletionsRequest(req *ir.UnifiedChatRequest) ([]byte, error)
 		m["reasoning_effort"] = ir.MapBudgetToEffort(req.Thinking.Budget, "auto")
 	}
 
-	var messages []interface{}
+	var messages []any
 	for _, msg := range req.Messages {
 		if msgObj := convertMessageToOpenAI(msg); msgObj != nil {
 			messages = append(messages, msgObj)
@@ -65,15 +64,15 @@ func convertToChatCompletionsRequest(req *ir.UnifiedChatRequest) ([]byte, error)
 	m["messages"] = messages
 
 	if len(req.Tools) > 0 {
-		tools := make([]interface{}, len(req.Tools))
+		tools := make([]any, len(req.Tools))
 		for i, t := range req.Tools {
 			params := t.Parameters
 			if params == nil {
-				params = map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+				params = map[string]any{"type": "object", "properties": map[string]any{}}
 			}
-			tools[i] = map[string]interface{}{
+			tools[i] = map[string]any{
 				"type": "function",
-				"function": map[string]interface{}{
+				"function": map[string]any{
 					"name": t.Name, "description": t.Description, "parameters": params,
 				},
 			}
@@ -123,7 +122,7 @@ func convertToChatCompletionsRequest(req *ir.UnifiedChatRequest) ([]byte, error)
 // This is the new OpenAI format used by Codex CLI and newer clients.
 // Key differences: uses "input" instead of "messages", "max_output_tokens" instead of "max_tokens".
 func convertToResponsesAPIRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
-	m := map[string]interface{}{"model": req.Model}
+	m := map[string]any{"model": req.Model}
 	if req.Temperature != nil {
 		m["temperature"] = *req.Temperature
 	}
@@ -137,7 +136,7 @@ func convertToResponsesAPIRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 		m["instructions"] = req.Instructions
 	}
 
-	var input []interface{}
+	var input []any
 	for _, msg := range req.Messages {
 		if msg.Role == ir.RoleSystem && req.Instructions != "" {
 			continue
@@ -151,7 +150,7 @@ func convertToResponsesAPIRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 	}
 
 	if req.Thinking != nil && (req.Thinking.IncludeThoughts || req.Thinking.Effort != "" || req.Thinking.Summary != "") {
-		reasoning := map[string]interface{}{}
+		reasoning := map[string]any{}
 		if req.Thinking.Effort != "" {
 			reasoning["effort"] = req.Thinking.Effort
 		} else if req.Thinking.IncludeThoughts {
@@ -166,9 +165,9 @@ func convertToResponsesAPIRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 	}
 
 	if len(req.Tools) > 0 {
-		tools := make([]interface{}, len(req.Tools))
+		tools := make([]any, len(req.Tools))
 		for i, t := range req.Tools {
-			tools[i] = map[string]interface{}{
+			tools[i] = map[string]any{
 				"type": "function", "name": t.Name, "description": t.Description, "parameters": t.Parameters,
 			}
 		}
@@ -185,7 +184,7 @@ func convertToResponsesAPIRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 		m["previous_response_id"] = req.PreviousResponseID
 	}
 	if req.PromptID != "" {
-		prompt := map[string]interface{}{"id": req.PromptID}
+		prompt := map[string]any{"id": req.PromptID}
 		if req.PromptVersion != "" {
 			prompt["version"] = req.PromptVersion
 		}
@@ -204,13 +203,13 @@ func convertToResponsesAPIRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 	return json.Marshal(m)
 }
 
-func convertMessageToResponsesInput(msg ir.Message) interface{} {
+func convertMessageToResponsesInput(msg ir.Message) any {
 	switch msg.Role {
 	case ir.RoleSystem:
 		if text := ir.CombineTextParts(msg); text != "" {
-			return map[string]interface{}{
+			return map[string]any{
 				"type": "message", "role": "system",
-				"content": []interface{}{map[string]interface{}{"type": "input_text", "text": text}},
+				"content": []any{map[string]any{"type": "input_text", "text": text}},
 			}
 		}
 	case ir.RoleUser:
@@ -218,20 +217,20 @@ func convertMessageToResponsesInput(msg ir.Message) interface{} {
 	case ir.RoleAssistant:
 		if len(msg.ToolCalls) > 0 {
 			tc := msg.ToolCalls[0]
-			return map[string]interface{}{
+			return map[string]any{
 				"type": "function_call", "call_id": tc.ID, "name": tc.Name, "arguments": tc.Args,
 			}
 		}
 		if text := ir.CombineTextParts(msg); text != "" {
-			return map[string]interface{}{
+			return map[string]any{
 				"type": "message", "role": "assistant",
-				"content": []interface{}{map[string]interface{}{"type": "output_text", "text": text}},
+				"content": []any{map[string]any{"type": "output_text", "text": text}},
 			}
 		}
 	case ir.RoleTool:
 		for _, part := range msg.Content {
 			if part.Type == ir.ContentTypeToolResult && part.ToolResult != nil {
-				return map[string]interface{}{
+				return map[string]any{
 					"type": "function_call_output", "call_id": part.ToolResult.ToolCallID, "output": part.ToolResult.Result,
 				}
 			}
@@ -240,27 +239,27 @@ func convertMessageToResponsesInput(msg ir.Message) interface{} {
 	return nil
 }
 
-func buildResponsesUserMessage(msg ir.Message) interface{} {
-	var content []interface{}
+func buildResponsesUserMessage(msg ir.Message) any {
+	var content []any
 	for _, part := range msg.Content {
 		switch part.Type {
 		case ir.ContentTypeText:
 			if part.Text != "" {
-				content = append(content, map[string]interface{}{"type": "input_text", "text": part.Text})
+				content = append(content, map[string]any{"type": "input_text", "text": part.Text})
 			}
 		case ir.ContentTypeImage:
 			if part.Image != nil {
 				if part.Image.URL != "" {
-					content = append(content, map[string]interface{}{"type": "input_image", "image_url": part.Image.URL})
+					content = append(content, map[string]any{"type": "input_image", "image_url": part.Image.URL})
 				} else if part.Image.Data != "" {
-					content = append(content, map[string]interface{}{
+					content = append(content, map[string]any{
 						"type": "input_image", "image_url": fmt.Sprintf("data:%s;base64,%s", part.Image.MimeType, part.Image.Data),
 					})
 				}
 			}
 		case ir.ContentTypeFile:
 			if part.File != nil {
-				fileItem := map[string]interface{}{"type": "input_file"}
+				fileItem := map[string]any{"type": "input_file"}
 				if part.File.FileID != "" {
 					fileItem["file_id"] = part.File.FileID
 				}
@@ -280,7 +279,7 @@ func buildResponsesUserMessage(msg ir.Message) interface{} {
 	if len(content) == 0 {
 		return nil
 	}
-	return map[string]interface{}{"type": "message", "role": "user", "content": content}
+	return map[string]any{"type": "message", "role": "user", "content": content}
 }
 
 // ToOpenAIChatCompletion converts messages to OpenAI chat completion response.
@@ -300,11 +299,11 @@ func ToOpenAIChatCompletionCandidates(candidates []ir.CandidateResult, usage *ir
 		}
 	}
 
-	response := map[string]interface{}{
-		"id": responseID, "object": "chat.completion", "created": created, "model": model, "choices": []interface{}{},
+	response := map[string]any{
+		"id": responseID, "object": "chat.completion", "created": created, "model": model, "choices": []any{},
 	}
 
-	var choices []interface{}
+	var choices []any
 	for _, candidate := range candidates {
 		if len(candidate.Messages) == 0 {
 			continue
@@ -316,7 +315,7 @@ func ToOpenAIChatCompletionCandidates(candidates []ir.CandidateResult, usage *ir
 			continue
 		}
 
-		msgContent := map[string]interface{}{"role": string(msg.Role)}
+		msgContent := map[string]any{"role": string(msg.Role)}
 		if text := builder.GetTextContent(); text != "" {
 			msgContent["content"] = text
 		}
@@ -327,7 +326,7 @@ func ToOpenAIChatCompletionCandidates(candidates []ir.CandidateResult, usage *ir
 			msgContent["tool_calls"] = tcs
 		}
 
-		choiceObj := map[string]interface{}{
+		choiceObj := map[string]any{
 			"index": candidate.Index, "finish_reason": ir.MapFinishReasonToOpenAI(candidate.FinishReason), "message": msgContent,
 		}
 		if candidate.Logprobs != nil {
@@ -339,7 +338,7 @@ func ToOpenAIChatCompletionCandidates(candidates []ir.CandidateResult, usage *ir
 	response["choices"] = choices
 
 	if usage != nil {
-		usageMap := map[string]interface{}{
+		usageMap := map[string]any{
 			"prompt_tokens": usage.PromptTokens, "completion_tokens": usage.CompletionTokens, "total_tokens": usage.TotalTokens,
 		}
 		thoughtsTokens := 0
@@ -349,7 +348,7 @@ func ToOpenAIChatCompletionCandidates(candidates []ir.CandidateResult, usage *ir
 			thoughtsTokens = usage.ThoughtsTokenCount
 		}
 		if thoughtsTokens > 0 {
-			usageMap["completion_tokens_details"] = map[string]interface{}{"reasoning_tokens": thoughtsTokens}
+			usageMap["completion_tokens_details"] = map[string]any{"reasoning_tokens": thoughtsTokens}
 		}
 		response["usage"] = usageMap
 	}
@@ -369,12 +368,12 @@ func ToOpenAIChatCompletionMeta(messages []ir.Message, usage *ir.Usage, model, m
 		}
 	}
 
-	response := map[string]interface{}{
-		"id": responseID, "object": "chat.completion", "created": created, "model": model, "choices": []interface{}{},
+	response := map[string]any{
+		"id": responseID, "object": "chat.completion", "created": created, "model": model, "choices": []any{},
 	}
 
 	if msg := builder.GetLastMessage(); msg != nil {
-		msgContent := map[string]interface{}{"role": string(msg.Role)}
+		msgContent := map[string]any{"role": string(msg.Role)}
 		if text := builder.GetTextContent(); text != "" {
 			msgContent["content"] = text
 		}
@@ -385,7 +384,7 @@ func ToOpenAIChatCompletionMeta(messages []ir.Message, usage *ir.Usage, model, m
 			msgContent["tool_calls"] = tcs
 		}
 
-		choiceObj := map[string]interface{}{
+		choiceObj := map[string]any{
 			"index": 0, "finish_reason": builder.DetermineFinishReason(), "message": msgContent,
 		}
 		if meta != nil && meta.NativeFinishReason != "" {
@@ -394,7 +393,7 @@ func ToOpenAIChatCompletionMeta(messages []ir.Message, usage *ir.Usage, model, m
 		if meta != nil && meta.Logprobs != nil {
 			choiceObj["logprobs"] = meta.Logprobs
 		}
-		response["choices"] = []interface{}{choiceObj}
+		response["choices"] = []any{choiceObj}
 	}
 
 	if usageMap := builder.BuildUsageMap(); usageMap != nil {
@@ -405,7 +404,7 @@ func ToOpenAIChatCompletionMeta(messages []ir.Message, usage *ir.Usage, model, m
 			thoughtsTokens = usage.ThoughtsTokenCount
 		}
 		if thoughtsTokens > 0 {
-			usageMap["completion_tokens_details"] = map[string]interface{}{"reasoning_tokens": thoughtsTokens}
+			usageMap["completion_tokens_details"] = map[string]any{"reasoning_tokens": thoughtsTokens}
 		}
 		response["usage"] = usageMap
 	}
@@ -429,18 +428,18 @@ func ToOpenAIChunkMeta(event ir.UnifiedEvent, model, messageID string, chunkInde
 		}
 	}
 
-	chunk := map[string]interface{}{
-		"id": responseID, "object": "chat.completion.chunk", "created": created, "model": model, "choices": []interface{}{},
+	chunk := map[string]any{
+		"id": responseID, "object": "chat.completion.chunk", "created": created, "model": model, "choices": []any{},
 	}
 	if event.SystemFingerprint != "" {
 		chunk["system_fingerprint"] = event.SystemFingerprint
 	}
 
-	choice := map[string]interface{}{"index": 0, "delta": map[string]interface{}{}}
+	choice := map[string]any{"index": 0, "delta": map[string]any{}}
 
 	switch event.Type {
 	case ir.EventTypeToken:
-		delta := map[string]interface{}{"role": "assistant"}
+		delta := map[string]any{"role": "assistant"}
 		if event.Content != "" {
 			delta["content"] = event.Content
 		}
@@ -452,22 +451,22 @@ func ToOpenAIChunkMeta(event ir.UnifiedEvent, model, messageID string, chunkInde
 		choice["delta"] = ir.BuildReasoningDelta(event.Reasoning, event.ThoughtSignature)
 	case ir.EventTypeToolCall:
 		if event.ToolCall != nil {
-			choice["delta"] = map[string]interface{}{
+			choice["delta"] = map[string]any{
 				"role": "assistant",
-				"tool_calls": []interface{}{
-					map[string]interface{}{
+				"tool_calls": []any{
+					map[string]any{
 						"index": chunkIndex, "id": event.ToolCall.ID, "type": "function",
-						"function": map[string]interface{}{"name": event.ToolCall.Name, "arguments": event.ToolCall.Args},
+						"function": map[string]any{"name": event.ToolCall.Name, "arguments": event.ToolCall.Args},
 					},
 				},
 			}
 		}
 	case ir.EventTypeImage:
 		if event.Image != nil {
-			choice["delta"] = map[string]interface{}{
+			choice["delta"] = map[string]any{
 				"role": "assistant",
-				"images": []interface{}{
-					map[string]interface{}{
+				"images": []any{
+					map[string]any{
 						"type": "image_url",
 						"image_url": map[string]string{
 							"url": fmt.Sprintf("data:%s;base64,%s", event.Image.MimeType, event.Image.Data),
@@ -489,11 +488,11 @@ func ToOpenAIChunkMeta(event ir.UnifiedEvent, model, messageID string, chunkInde
 		}
 		
 		if event.Usage != nil {
-			usageMap := map[string]interface{}{
+			usageMap := map[string]any{
 				"prompt_tokens": event.Usage.PromptTokens, "completion_tokens": event.Usage.CompletionTokens, "total_tokens": event.Usage.TotalTokens,
 			}
 			
-			promptDetails := map[string]interface{}{}
+			promptDetails := map[string]any{}
 			if event.Usage.CachedTokens > 0 {
 				promptDetails["cached_tokens"] = event.Usage.CachedTokens
 			}
@@ -504,7 +503,7 @@ func ToOpenAIChunkMeta(event ir.UnifiedEvent, model, messageID string, chunkInde
 				usageMap["prompt_tokens_details"] = promptDetails
 			}
 
-			completionDetails := map[string]interface{}{}
+			completionDetails := map[string]any{}
 			thoughtsTokens := 0
 			if meta != nil && meta.ThoughtsTokenCount > 0 {
 				thoughtsTokens = meta.ThoughtsTokenCount
@@ -537,7 +536,7 @@ func ToOpenAIChunkMeta(event ir.UnifiedEvent, model, messageID string, chunkInde
 		choice["logprobs"] = event.Logprobs
 	}
 
-	chunk["choices"] = []interface{}{choice}
+	chunk["choices"] = []any{choice}
 	jsonBytes, err := json.Marshal(chunk)
 	if err != nil {
 		return nil, err
@@ -545,11 +544,11 @@ func ToOpenAIChunkMeta(event ir.UnifiedEvent, model, messageID string, chunkInde
 	return []byte(fmt.Sprintf("data: %s\n\n", string(jsonBytes))), nil
 }
 
-func convertMessageToOpenAI(msg ir.Message) map[string]interface{} {
+func convertMessageToOpenAI(msg ir.Message) map[string]any {
 	switch msg.Role {
 	case ir.RoleSystem:
 		if text := ir.CombineTextParts(msg); text != "" {
-			return map[string]interface{}{"role": "system", "content": text}
+			return map[string]any{"role": "system", "content": text}
 		}
 	case ir.RoleUser:
 		return buildOpenAIUserMessage(msg)
@@ -561,17 +560,17 @@ func convertMessageToOpenAI(msg ir.Message) map[string]interface{} {
 	return nil
 }
 
-func buildOpenAIUserMessage(msg ir.Message) map[string]interface{} {
-	var parts []interface{}
+func buildOpenAIUserMessage(msg ir.Message) map[string]any {
+	var parts []any
 	for _, part := range msg.Content {
 		switch part.Type {
 		case ir.ContentTypeText:
 			if part.Text != "" {
-				parts = append(parts, map[string]interface{}{"type": "text", "text": part.Text})
+				parts = append(parts, map[string]any{"type": "text", "text": part.Text})
 			}
 		case ir.ContentTypeImage:
 			if part.Image != nil {
-				parts = append(parts, map[string]interface{}{
+				parts = append(parts, map[string]any{
 					"type":      "image_url",
 					"image_url": map[string]string{"url": fmt.Sprintf("data:%s;base64,%s", part.Image.MimeType, part.Image.Data)},
 				})
@@ -582,27 +581,28 @@ func buildOpenAIUserMessage(msg ir.Message) map[string]interface{} {
 		return nil
 	}
 	if len(parts) == 1 {
-		if tp, ok := parts[0].(map[string]interface{}); ok && tp["type"] == "text" {
-			return map[string]interface{}{"role": "user", "content": tp["text"]}
+		if tp, ok := parts[0].(map[string]any); ok && tp["type"] == "text" {
+			return map[string]any{"role": "user", "content": tp["text"]}
 		}
 	}
-	return map[string]interface{}{"role": "user", "content": parts}
+	return map[string]any{"role": "user", "content": parts}
 }
 
-func buildOpenAIAssistantMessage(msg ir.Message) map[string]interface{} {
-	result := map[string]interface{}{"role": "assistant"}
-	if text := ir.CombineTextParts(msg); text != "" {
+func buildOpenAIAssistantMessage(msg ir.Message) map[string]any {
+	result := map[string]any{"role": "assistant"}
+	text, reasoning := ir.CombineTextAndReasoning(msg)
+	if text != "" {
 		result["content"] = text
 	}
-	if reasoning := ir.CombineReasoningParts(msg); reasoning != "" {
+	if reasoning != "" {
 		ir.AddReasoningToMessage(result, reasoning, ir.GetFirstReasoningSignature(msg))
 	}
 	if len(msg.ToolCalls) > 0 {
-		tcs := make([]interface{}, len(msg.ToolCalls))
+		tcs := make([]any, len(msg.ToolCalls))
 		for i, tc := range msg.ToolCalls {
-			tcs[i] = map[string]interface{}{
+			tcs[i] = map[string]any{
 				"id": tc.ID, "type": "function",
-				"function": map[string]interface{}{"name": tc.Name, "arguments": tc.Args},
+				"function": map[string]any{"name": tc.Name, "arguments": tc.Args},
 			}
 		}
 		result["tool_calls"] = tcs
@@ -610,10 +610,10 @@ func buildOpenAIAssistantMessage(msg ir.Message) map[string]interface{} {
 	return result
 }
 
-func buildOpenAIToolMessage(msg ir.Message) map[string]interface{} {
+func buildOpenAIToolMessage(msg ir.Message) map[string]any {
 	for _, part := range msg.Content {
 		if part.Type == ir.ContentTypeToolResult && part.ToolResult != nil {
-			return map[string]interface{}{
+			return map[string]any{
 				"role": "tool", "tool_call_id": part.ToolResult.ToolCallID, "content": part.ToolResult.Result,
 			}
 		}
@@ -633,11 +633,11 @@ func ToResponsesAPIResponse(messages []ir.Message, usage *ir.Usage, model string
 		}
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"id": responseID, "object": "response", "created_at": created, "status": "completed", "model": model,
 	}
 
-	var output []interface{}
+	var output []any
 	var outputText string
 	builder := ir.NewResponseBuilder(messages, usage, model)
 
@@ -645,21 +645,22 @@ func ToResponsesAPIResponse(messages []ir.Message, usage *ir.Usage, model string
 		if msg.Role != ir.RoleAssistant {
 			continue
 		}
-		if reasoning := ir.CombineReasoningParts(msg); reasoning != "" {
-			output = append(output, map[string]interface{}{
+		text, reasoning := ir.CombineTextAndReasoning(msg)
+		if reasoning != "" {
+			output = append(output, map[string]any{
 				"id": fmt.Sprintf("rs_%s", responseID), "type": "reasoning",
-				"summary": []interface{}{map[string]interface{}{"type": "summary_text", "text": reasoning}},
+				"summary": []any{map[string]any{"type": "summary_text", "text": reasoning}},
 			})
 		}
-		if text := ir.CombineTextParts(msg); text != "" {
+		if text != "" {
 			outputText = text
-			output = append(output, map[string]interface{}{
+			output = append(output, map[string]any{
 				"id": fmt.Sprintf("msg_%s", responseID), "type": "message", "status": "completed", "role": "assistant",
-				"content": []interface{}{map[string]interface{}{"type": "output_text", "text": text, "annotations": []interface{}{}}},
+				"content": []any{map[string]any{"type": "output_text", "text": text, "annotations": []any{}}},
 			})
 		}
 		for _, tc := range msg.ToolCalls {
-			output = append(output, map[string]interface{}{
+			output = append(output, map[string]any{
 				"id": fmt.Sprintf("fc_%s", tc.ID), "type": "function_call", "status": "completed",
 				"call_id": tc.ID, "name": tc.Name, "arguments": tc.Args,
 			})
@@ -674,11 +675,11 @@ func ToResponsesAPIResponse(messages []ir.Message, usage *ir.Usage, model string
 	}
 
 	if usageMap := builder.BuildUsageMap(); usageMap != nil {
-		responsesUsage := map[string]interface{}{
+		responsesUsage := map[string]any{
 			"input_tokens": usageMap["prompt_tokens"], "output_tokens": usageMap["completion_tokens"], "total_tokens": usageMap["total_tokens"],
 		}
 		if usage != nil && usage.CachedTokens > 0 {
-			responsesUsage["input_tokens_details"] = map[string]interface{}{"cached_tokens": usage.CachedTokens}
+			responsesUsage["input_tokens_details"] = map[string]any{"cached_tokens": usage.CachedTokens}
 		}
 		thoughtsTokens := 0
 		if meta != nil && meta.ThoughtsTokenCount > 0 {
@@ -687,7 +688,7 @@ func ToResponsesAPIResponse(messages []ir.Message, usage *ir.Usage, model string
 			thoughtsTokens = usage.ThoughtsTokenCount
 		}
 		if thoughtsTokens > 0 {
-			responsesUsage["output_tokens_details"] = map[string]interface{}{"reasoning_tokens": thoughtsTokens}
+			responsesUsage["output_tokens_details"] = map[string]any{"reasoning_tokens": thoughtsTokens}
 		}
 		response["usage"] = responsesUsage
 	}
@@ -735,9 +736,9 @@ func ToResponsesAPIChunk(event ir.UnifiedEvent, model string, state *ResponsesSt
 
 	if !state.Started {
 		for _, t := range []string{"response.created", "response.in_progress"} {
-			b, _ := json.Marshal(map[string]interface{}{
+			b, _ := json.Marshal(map[string]any{
 				"type": t, "sequence_number": nextSeq(),
-				"response": map[string]interface{}{
+				"response": map[string]any{
 					"id": state.ResponseID, "object": "response", "created_at": state.Created, "status": "in_progress",
 				},
 			})
@@ -750,19 +751,19 @@ func ToResponsesAPIChunk(event ir.UnifiedEvent, model string, state *ResponsesSt
 	case ir.EventTypeToken:
 		if state.MsgID == "" {
 			state.MsgID = fmt.Sprintf("msg_%s", state.ResponseID)
-			b1, _ := json.Marshal(map[string]interface{}{
+			b1, _ := json.Marshal(map[string]any{
 				"type": "response.output_item.added", "sequence_number": nextSeq(), "output_index": 0,
-				"item": map[string]interface{}{"id": state.MsgID, "type": "message", "status": "in_progress", "role": "assistant", "content": []interface{}{}},
+				"item": map[string]any{"id": state.MsgID, "type": "message", "status": "in_progress", "role": "assistant", "content": []any{}},
 			})
 			out = append(out, fmt.Sprintf("event: response.output_item.added\ndata: %s\n\n", string(b1)))
-			b2, _ := json.Marshal(map[string]interface{}{
+			b2, _ := json.Marshal(map[string]any{
 				"type": "response.content_part.added", "sequence_number": nextSeq(), "item_id": state.MsgID,
-				"output_index": 0, "content_index": 0, "part": map[string]interface{}{"type": "output_text", "text": ""},
+				"output_index": 0, "content_index": 0, "part": map[string]any{"type": "output_text", "text": ""},
 			})
 			out = append(out, fmt.Sprintf("event: response.content_part.added\ndata: %s\n\n", string(b2)))
 		}
 		state.TextBuffer += event.Content
-		b, _ := json.Marshal(map[string]interface{}{
+		b, _ := json.Marshal(map[string]any{
 			"type": "response.output_text.delta", "sequence_number": nextSeq(), "item_id": state.MsgID,
 			"output_index": 0, "content_index": 0, "delta": event.Content,
 		})
@@ -775,14 +776,14 @@ func ToResponsesAPIChunk(event ir.UnifiedEvent, model string, state *ResponsesSt
 		}
 		if state.ReasoningID == "" {
 			state.ReasoningID = fmt.Sprintf("rs_%s", state.ResponseID)
-			b, _ := json.Marshal(map[string]interface{}{
+			b, _ := json.Marshal(map[string]any{
 				"type": "response.output_item.added", "sequence_number": nextSeq(), "output_index": 0,
-				"item": map[string]interface{}{"id": state.ReasoningID, "type": "reasoning", "status": "in_progress", "summary": []interface{}{}},
+				"item": map[string]any{"id": state.ReasoningID, "type": "reasoning", "status": "in_progress", "summary": []any{}},
 			})
 			out = append(out, fmt.Sprintf("event: response.output_item.added\ndata: %s\n\n", string(b)))
 		}
 		state.ReasoningBuffer += text
-		b, _ := json.Marshal(map[string]interface{}{
+		b, _ := json.Marshal(map[string]any{
 			"type": "response.reasoning_summary_text.delta", "sequence_number": nextSeq(), "item_id": state.ReasoningID,
 			"output_index": 0, "content_index": 0, "delta": text,
 		})
@@ -793,9 +794,9 @@ func ToResponsesAPIChunk(event ir.UnifiedEvent, model string, state *ResponsesSt
 		if _, exists := state.FuncCallIDs[idx]; !exists {
 			state.FuncCallIDs[idx] = fmt.Sprintf("fc_%s", event.ToolCall.ID)
 			state.FuncNames[idx] = event.ToolCall.Name
-			b, _ := json.Marshal(map[string]interface{}{
+			b, _ := json.Marshal(map[string]any{
 				"type": "response.output_item.added", "sequence_number": nextSeq(), "output_index": idx,
-				"item": map[string]interface{}{
+				"item": map[string]any{
 					"id": state.FuncCallIDs[idx], "type": "function_call", "status": "in_progress",
 					"call_id": event.ToolCall.ID, "name": event.ToolCall.Name, "arguments": "",
 				},
@@ -805,15 +806,15 @@ func ToResponsesAPIChunk(event ir.UnifiedEvent, model string, state *ResponsesSt
 		// For complete tool call, we might not get deltas, so we can just emit done if needed,
 		// but usually we get deltas or the full args. If we get full args here:
 		if event.ToolCall.Args != "" {
-			b, _ := json.Marshal(map[string]interface{}{
+			b, _ := json.Marshal(map[string]any{
 				"type": "response.function_call_arguments.delta", "sequence_number": nextSeq(), "item_id": state.FuncCallIDs[idx],
 				"output_index": idx, "delta": event.ToolCall.Args,
 			})
 			out = append(out, fmt.Sprintf("event: response.function_call_arguments.delta\ndata: %s\n\n", string(b)))
 		}
-		b, _ := json.Marshal(map[string]interface{}{
+		b, _ := json.Marshal(map[string]any{
 			"type": "response.output_item.done", "sequence_number": nextSeq(), "item_id": state.FuncCallIDs[idx],
-			"output_index": idx, "item": map[string]interface{}{
+			"output_index": idx, "item": map[string]any{
 				"id": state.FuncCallIDs[idx], "type": "function_call", "status": "completed",
 				"call_id": event.ToolCall.ID, "name": event.ToolCall.Name, "arguments": event.ToolCall.Args,
 			},
@@ -824,9 +825,9 @@ func ToResponsesAPIChunk(event ir.UnifiedEvent, model string, state *ResponsesSt
 		idx := event.ToolCallIndex
 		if _, exists := state.FuncCallIDs[idx]; !exists {
 			state.FuncCallIDs[idx] = fmt.Sprintf("fc_%s", event.ToolCall.ID)
-			b, _ := json.Marshal(map[string]interface{}{
+			b, _ := json.Marshal(map[string]any{
 				"type": "response.output_item.added", "sequence_number": nextSeq(), "output_index": idx,
-				"item": map[string]interface{}{
+				"item": map[string]any{
 					"id": state.FuncCallIDs[idx], "type": "function_call", "status": "in_progress",
 					"call_id": event.ToolCall.ID, "name": "", "arguments": "",
 				},
@@ -834,7 +835,7 @@ func ToResponsesAPIChunk(event ir.UnifiedEvent, model string, state *ResponsesSt
 			out = append(out, fmt.Sprintf("event: response.output_item.added\ndata: %s\n\n", string(b)))
 		}
 		state.FuncArgsBuffer[idx] += event.ToolCall.Args
-		b, _ := json.Marshal(map[string]interface{}{
+		b, _ := json.Marshal(map[string]any{
 			"type": "response.function_call_arguments.delta", "sequence_number": nextSeq(), "item_id": state.FuncCallIDs[idx],
 			"output_index": idx, "delta": event.ToolCall.Args,
 		})
@@ -842,47 +843,47 @@ func ToResponsesAPIChunk(event ir.UnifiedEvent, model string, state *ResponsesSt
 
 	case ir.EventTypeFinish:
 		if state.MsgID != "" {
-			b1, _ := json.Marshal(map[string]interface{}{
+			b1, _ := json.Marshal(map[string]any{
 				"type": "response.content_part.done", "sequence_number": nextSeq(), "item_id": state.MsgID,
-				"output_index": 0, "content_index": 0, "part": map[string]interface{}{"type": "output_text", "text": state.TextBuffer},
+				"output_index": 0, "content_index": 0, "part": map[string]any{"type": "output_text", "text": state.TextBuffer},
 			})
 			out = append(out, fmt.Sprintf("event: response.content_part.done\ndata: %s\n\n", string(b1)))
-			b2, _ := json.Marshal(map[string]interface{}{
+			b2, _ := json.Marshal(map[string]any{
 				"type": "response.output_item.done", "sequence_number": nextSeq(), "output_index": 0,
-				"item": map[string]interface{}{
+				"item": map[string]any{
 					"id": state.MsgID, "type": "message", "status": "completed", "role": "assistant",
-					"content": []interface{}{map[string]interface{}{"type": "output_text", "text": state.TextBuffer}},
+					"content": []any{map[string]any{"type": "output_text", "text": state.TextBuffer}},
 				},
 			})
 			out = append(out, fmt.Sprintf("event: response.output_item.done\ndata: %s\n\n", string(b2)))
 		}
 		if state.ReasoningID != "" {
-			b, _ := json.Marshal(map[string]interface{}{
+			b, _ := json.Marshal(map[string]any{
 				"type": "response.output_item.done", "sequence_number": nextSeq(), "output_index": 0,
-				"item": map[string]interface{}{
+				"item": map[string]any{
 					"id": state.ReasoningID, "type": "reasoning", "status": "completed",
-					"summary": []interface{}{map[string]interface{}{"type": "summary_text", "text": state.ReasoningBuffer}},
+					"summary": []any{map[string]any{"type": "summary_text", "text": state.ReasoningBuffer}},
 				},
 			})
 			out = append(out, fmt.Sprintf("event: response.output_item.done\ndata: %s\n\n", string(b)))
 		}
 
-		usageMap := map[string]interface{}{}
+		usageMap := map[string]any{}
 		if event.Usage != nil {
-			usageMap = map[string]interface{}{
+			usageMap = map[string]any{
 				"input_tokens": event.Usage.PromptTokens, "output_tokens": event.Usage.CompletionTokens, "total_tokens": event.Usage.TotalTokens,
 			}
 			if event.Usage.CachedTokens > 0 {
-				usageMap["input_tokens_details"] = map[string]interface{}{"cached_tokens": event.Usage.CachedTokens}
+				usageMap["input_tokens_details"] = map[string]any{"cached_tokens": event.Usage.CachedTokens}
 			}
 			if event.Usage.ThoughtsTokenCount > 0 {
-				usageMap["output_tokens_details"] = map[string]interface{}{"reasoning_tokens": event.Usage.ThoughtsTokenCount}
+				usageMap["output_tokens_details"] = map[string]any{"reasoning_tokens": event.Usage.ThoughtsTokenCount}
 			}
 		}
 
-		b, _ := json.Marshal(map[string]interface{}{
+		b, _ := json.Marshal(map[string]any{
 			"type": "response.done", "sequence_number": nextSeq(),
-			"response": map[string]interface{}{
+			"response": map[string]any{
 				"id": state.ResponseID, "object": "response", "created_at": state.Created, "status": "completed",
 				"usage": usageMap,
 			},

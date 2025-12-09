@@ -1,7 +1,3 @@
-/**
- * @file Response building utilities for unified format
- */
-
 package ir
 
 import "encoding/json"
@@ -82,17 +78,17 @@ func (b *ResponseBuilder) DetermineFinishReason() string {
 }
 
 // BuildOpenAIToolCalls builds OpenAI-format tool calls array
-func (b *ResponseBuilder) BuildOpenAIToolCalls() []interface{} {
+func (b *ResponseBuilder) BuildOpenAIToolCalls() []any {
 	toolCalls := b.GetToolCalls()
 	if len(toolCalls) == 0 {
 		return nil
 	}
-	result := make([]interface{}, len(toolCalls))
+	result := make([]any, len(toolCalls))
 	for i, tc := range toolCalls {
-		result[i] = map[string]interface{}{
+		result[i] = map[string]any{
 			"id":   tc.ID,
 			"type": "function",
-			"function": map[string]interface{}{
+			"function": map[string]any{
 				"name":      tc.Name,
 				"arguments": tc.Args,
 			},
@@ -102,38 +98,38 @@ func (b *ResponseBuilder) BuildOpenAIToolCalls() []interface{} {
 }
 
 // BuildClaudeContentParts builds Claude-format content parts array
-func (b *ResponseBuilder) BuildClaudeContentParts() []interface{} {
+func (b *ResponseBuilder) BuildClaudeContentParts() []any {
 	msg := b.GetLastMessage()
 	if msg == nil {
-		return []interface{}{}
+		return []any{}
 	}
 
-	var parts []interface{}
+	var parts []any
 
 	// Add reasoning/thinking content first
 	for _, part := range msg.Content {
 		if part.Type == ContentTypeReasoning && part.Reasoning != "" {
-			parts = append(parts, map[string]interface{}{"type": "thinking", "thinking": part.Reasoning})
+			parts = append(parts, map[string]any{"type": "thinking", "thinking": part.Reasoning})
 		}
 	}
 
 	// Add text content
 	for _, part := range msg.Content {
 		if part.Type == ContentTypeText && part.Text != "" {
-			parts = append(parts, map[string]interface{}{"type": "text", "text": part.Text})
+			parts = append(parts, map[string]any{"type": "text", "text": part.Text})
 		}
 	}
 
 	// Add tool calls
 	for _, tc := range msg.ToolCalls {
-		toolUse := map[string]interface{}{
+		toolUse := map[string]any{
 			"type":  "tool_use",
 			"id":    toClaudeToolID(tc.ID),
 			"name":  tc.Name,
-			"input": map[string]interface{}{},
+			"input": map[string]any{},
 		}
 		if tc.Args != "" && tc.Args != "{}" {
-			var argsObj interface{}
+			var argsObj any
 			if json.Unmarshal([]byte(tc.Args), &argsObj) == nil {
 				toolUse["input"] = argsObj
 			}
@@ -145,20 +141,20 @@ func (b *ResponseBuilder) BuildClaudeContentParts() []interface{} {
 }
 
 // BuildGeminiContentParts builds Gemini-format content parts array
-func (b *ResponseBuilder) BuildGeminiContentParts() []interface{} {
+func (b *ResponseBuilder) BuildGeminiContentParts() []any {
 	msg := b.GetLastMessage()
 	if msg == nil {
-		return []interface{}{}
+		return []any{}
 	}
 
-	var parts []interface{}
+	var parts []any
 
 	// Process all content parts in order to preserve original sequence
 	for _, part := range msg.Content {
 		switch part.Type {
 		case ContentTypeReasoning:
 			if part.Reasoning != "" {
-				p := map[string]interface{}{"text": part.Reasoning, "thought": true}
+				p := map[string]any{"text": part.Reasoning, "thought": true}
 				if part.ThoughtSignature != "" {
 					p["thoughtSignature"] = part.ThoughtSignature
 				}
@@ -166,7 +162,7 @@ func (b *ResponseBuilder) BuildGeminiContentParts() []interface{} {
 			}
 		case ContentTypeText:
 			if part.Text != "" {
-				p := map[string]interface{}{"text": part.Text}
+				p := map[string]any{"text": part.Text}
 				if part.ThoughtSignature != "" {
 					p["thoughtSignature"] = part.ThoughtSignature
 				}
@@ -174,8 +170,8 @@ func (b *ResponseBuilder) BuildGeminiContentParts() []interface{} {
 			}
 		case ContentTypeImage:
 			if part.Image != nil && part.Image.Data != "" {
-				parts = append(parts, map[string]interface{}{
-					"inlineData": map[string]interface{}{
+				parts = append(parts, map[string]any{
+					"inlineData": map[string]any{
 						"mimeType": part.Image.MimeType,
 						"data":     part.Image.Data,
 					},
@@ -183,8 +179,8 @@ func (b *ResponseBuilder) BuildGeminiContentParts() []interface{} {
 			}
 		case ContentTypeExecutableCode:
 			if part.CodeExecution != nil && part.CodeExecution.Code != "" {
-				parts = append(parts, map[string]interface{}{
-					"executableCode": map[string]interface{}{
+				parts = append(parts, map[string]any{
+					"executableCode": map[string]any{
 						"language": part.CodeExecution.Language,
 						"code":     part.CodeExecution.Code,
 					},
@@ -192,8 +188,8 @@ func (b *ResponseBuilder) BuildGeminiContentParts() []interface{} {
 			}
 		case ContentTypeCodeResult:
 			if part.CodeExecution != nil {
-				parts = append(parts, map[string]interface{}{
-					"codeExecutionResult": map[string]interface{}{
+				parts = append(parts, map[string]any{
+					"codeExecutionResult": map[string]any{
 						"outcome": part.CodeExecution.Outcome,
 						"output":  part.CodeExecution.Output,
 					},
@@ -204,8 +200,8 @@ func (b *ResponseBuilder) BuildGeminiContentParts() []interface{} {
 
 	// Add tool calls as functionCall parts
 	for _, tc := range msg.ToolCalls {
-		parts = append(parts, map[string]interface{}{
-			"functionCall": map[string]interface{}{
+		parts = append(parts, map[string]any{
+			"functionCall": map[string]any{
 				"name": tc.Name,
 				"args": ParseToolCallArgs(tc.Args),
 			},
@@ -216,11 +212,11 @@ func (b *ResponseBuilder) BuildGeminiContentParts() []interface{} {
 }
 
 // BuildUsageMap builds a usage statistics map
-func (b *ResponseBuilder) BuildUsageMap() map[string]interface{} {
+func (b *ResponseBuilder) BuildUsageMap() map[string]any {
 	if b.usage == nil {
 		return nil
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"prompt_tokens":     b.usage.PromptTokens,
 		"completion_tokens": b.usage.CompletionTokens,
 		"total_tokens":      b.usage.TotalTokens,
