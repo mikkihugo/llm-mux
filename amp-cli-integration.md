@@ -1,6 +1,6 @@
 # Amp CLI Integration Guide
 
-This guide explains how to use CLIProxyAPI with Amp CLI and Amp IDE extensions, enabling you to use your existing Google/ChatGPT/Claude subscriptions (via OAuth) with Amp's CLI.
+This guide explains how to use llm-mux with Amp CLI and Amp IDE extensions, enabling you to use your existing Google/ChatGPT/Claude subscriptions (via OAuth) with Amp's CLI.
 
 ## Table of Contents
 
@@ -15,11 +15,11 @@ This guide explains how to use CLIProxyAPI with Amp CLI and Amp IDE extensions, 
 
 ## Overview
 
-The Amp CLI integration adds specialized routing to support Amp's API patterns while maintaining full compatibility with all existing CLIProxyAPI features. This allows you to use both traditional CLIProxyAPI features and Amp CLI with the same proxy server.
+The Amp CLI integration adds specialized routing to support Amp's API patterns while maintaining full compatibility with all existing llm-mux features. This allows you to use both traditional llm-mux features and Amp CLI with the same proxy server.
 
 ### Key Features
 
-- **Provider route aliases**: Maps Amp's `/api/provider/{provider}/v1...` patterns to CLIProxyAPI handlers
+- **Provider route aliases**: Maps Amp's `/api/provider/{provider}/v1...` patterns to llm-mux handlers
 - **Management proxy**: Forwards OAuth and account management requests to Amp's control plane
 - **Smart fallback**: Automatically routes unconfigured models to ampcode.com
 - **Model mapping**: Route unavailable models to alternatives you have access to (e.g., `claude-opus-4.5` → `claude-sonnet-4`)
@@ -51,7 +51,7 @@ For the most current information about which models Amp uses, see the **[Amp Mod
 
 #### Fallback Behavior
 
-CLIProxyAPI uses a smart fallback system:
+llm-mux uses a smart fallback system:
 
 1. **Provider authenticated locally** (`--login`, `--codex-login`, `--claude-login`):
    - Requests use **your OAuth subscription** (ChatGPT Plus/Pro, Claude Pro/Max, Google account)
@@ -143,7 +143,7 @@ amp-model-mappings:
 **How it works:**
 
 1. Amp CLI requests a model (e.g., `claude-opus-4.5`)
-2. CLIProxyAPI checks if a local provider is available for that model
+2. llm-mux checks if a local provider is available for that model
 3. If not available, it checks the model mappings
 4. If a mapping exists, the request is rewritten to use the target model
 5. The request is then handled locally (free, using your OAuth subscription)
@@ -189,12 +189,12 @@ When enabled, management routes (`/api/auth`, `/api/user`, `/api/threads`, etc.)
 
 This restriction uses the **actual TCP connection address** (`RemoteAddr`), not HTTP headers like `X-Forwarded-For`. This prevents header spoofing attacks but has important implications:
 
-- ✅ **Works for direct connections**: Running CLIProxyAPI directly on your machine or server
+- ✅ **Works for direct connections**: Running llm-mux directly on your machine or server
 - ⚠️ **May not work behind reverse proxies**: If deploying behind nginx, Cloudflare, or other proxies, the connection will appear to come from the proxy's IP, not localhost
 
 #### Reverse Proxy Deployments
 
-If you need to run CLIProxyAPI behind a reverse proxy (nginx, Caddy, Cloudflare Tunnel, etc.):
+If you need to run llm-mux behind a reverse proxy (nginx, Caddy, Cloudflare Tunnel, etc.):
 
 1. **Disable the localhost restriction**:
    ```yaml
@@ -205,7 +205,7 @@ If you need to run CLIProxyAPI behind a reverse proxy (nginx, Caddy, Cloudflare 
    - Firewall rules restricting access to management routes
    - Proxy-level authentication (HTTP Basic Auth, OAuth)
    - Network-level isolation (VPN, Tailscale, Cloudflare Access)
-   - Bind CLIProxyAPI to `127.0.0.1` only and access via SSH tunnel
+   - Bind llm-mux to `127.0.0.1` only and access via SSH tunnel
 
 3. **Example nginx configuration** (blocks external access to management routes):
    ```nginx
@@ -219,7 +219,7 @@ If you need to run CLIProxyAPI behind a reverse proxy (nginx, Caddy, Cloudflare 
 
 ## Setup
 
-### 1. Configure CLIProxyAPI
+### 1. Configure llm-mux
 
 Create or edit `config.yaml`:
 
@@ -328,7 +328,7 @@ These routes work even without `amp-upstream-url` configured:
 - `/api/provider/anthropic/v1/messages`
 - `/api/provider/google/v1beta/models/:action`
 
-Amp CLI calls these routes with your OAuth-authenticated models configured in CLIProxyAPI.
+Amp CLI calls these routes with your OAuth-authenticated models configured in llm-mux.
 
 #### Management Routes (Require `amp-upstream-url`)
 
@@ -347,7 +347,7 @@ These routes are proxied to ampcode.com:
 
 When Amp requests a model:
 
-1. **Check local configuration**: Does CLIProxyAPI have OAuth tokens for this model's provider?
+1. **Check local configuration**: Does llm-mux have OAuth tokens for this model's provider?
 2. **If YES**: Route to local handler (use your OAuth subscription)
 3. **If NO**: Check if a model mapping exists
 4. **If mapping exists**: Rewrite request to mapped model → Route to local handler (free)
@@ -433,7 +433,7 @@ echo $AMP_URL
 
 ## Additional Resources
 
-- [CLIProxyAPI Main Documentation](https://help.router-for.me/)
+- [llm-mux Main Documentation](https://help.router-for.me/)
 - [Amp CLI Official Manual](https://ampcode.com/manual)
 - [Management API Reference](https://help.router-for.me/management/api)
 - [SDK Documentation](sdk-usage.md)

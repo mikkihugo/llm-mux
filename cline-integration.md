@@ -1,11 +1,11 @@
 # Cline Integration Guide
 
-Integrate Cline authentication with CLIProxyAPI to use Cline models through OpenAI-compatible API.
+Integrate Cline authentication with llm-mux to use Cline models through OpenAI-compatible API.
 
 ## Prerequisites
 
 - Cline VSCode extension with active subscription
-- CLIProxyAPI installed
+- llm-mux installed
 
 ## Quick Start
 
@@ -56,7 +56,7 @@ npx @vscode/vsce package --allow-package-secrets sendgrid
 
 7. Token will be copied to clipboard
 
-### 2. Login to CLIProxyAPI
+### 2. Login to llm-mux
 
 ```bash
 # Interactive login
@@ -142,12 +142,12 @@ request-retry: 3
 - Never commit `auth/` directory to version control
 - Add `auth/` to `.gitignore`
 - Use file permissions 0600 for token files
-- Keep CLIProxyAPI on localhost unless properly secured
+- Keep llm-mux on localhost unless properly secured
 
 ## Programmatic Usage
 
 ```go
-import "github.com/router-for-me/CLIProxyAPI/v6/internal/auth/cline"
+import "github.com/nghyane/llm-mux/internal/auth/cline"
 
 authSvc := cline.NewClineAuth(cfg)
 tokenData, err := authSvc.RefreshTokens(ctx, refreshToken)
@@ -156,5 +156,5 @@ storage := authSvc.CreateTokenStorage(tokenData)
 
 ## Support
 
-- [GitHub Issues](https://github.com/router-for-me/CLIProxyAPI/issues)
+- [GitHub Issues](https://github.com/nghyane/llm-mux/issues)
 - [Main Documentation](../README.md)
