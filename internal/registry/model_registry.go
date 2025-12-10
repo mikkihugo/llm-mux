@@ -464,6 +464,36 @@ func (r *ModelRegistry) GetProvidersWithModelID(modelID string) []ProviderModelM
 	return result
 }
 
+// findModelRegistration finds a model registration using canonical index or direct lookup.
+// Must be called with mutex held.
+func (r *ModelRegistry) findModelRegistration(modelID string) *ModelRegistration {
+	// Check canonical index first - get first available provider's registration
+	if mappings, ok := r.canonicalIndex[modelID]; ok && len(mappings) > 0 {
+		for _, m := range mappings {
+			key := m.Provider + ":" + m.ModelID
+			if reg, ok := r.models[key]; ok && reg != nil && reg.Count > 0 {
+				return reg
+			}
+		}
+	}
+
+	// Direct lookup
+	if reg, ok := r.models[modelID]; ok {
+		return reg
+	}
+
+	// Search provider-prefixed keys
+	for key, reg := range r.models {
+		if reg == nil || reg.Count == 0 {
+			continue
+		}
+		if idx := strings.Index(key, ":"); idx > 0 && key[idx+1:] == modelID {
+			return reg
+		}
+	}
+	return nil
+}
+
 // getModelProvidersInternal is the lock-free internal version for use within locked contexts
 func (r *ModelRegistry) getModelProvidersInternal(modelID string) []string {
 	var result []string
@@ -815,28 +845,30 @@ func (r *ModelRegistry) GetModelCount(modelID string) int {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
-	if registration, exists := r.models[modelID]; exists {
-		now := time.Now()
-		quotaExpiredDuration := 5 * time.Minute
-
-		// Count clients that have exceeded quota but haven't recovered yet
-		expiredClients := 0
-		for _, quotaTime := range registration.QuotaExceededClients {
-			if quotaTime != nil && now.Sub(*quotaTime) < quotaExpiredDuration {
-				expiredClients++
-			}
-		}
-		suspendedClients := 0
-		if registration.SuspendedClients != nil {
-			suspendedClients = len(registration.SuspendedClients)
-		}
-		result := registration.Count - expiredClients - suspendedClients
-		if result < 0 {
-			return 0
-		}
-		return result
+	// Find registration using canonical index or direct lookup
+	reg := r.findModelRegistration(modelID)
+	if reg == nil {
+		return 0
 	}
-	return 0
+
+	now := time.Now()
+	quotaExpiredDuration := 5 * time.Minute
+
+	expiredClients := 0
+	for _, quotaTime := range reg.QuotaExceededClients {
+		if quotaTime != nil && now.Sub(*quotaTime) < quotaExpiredDuration {
+			expiredClients++
+		}
+	}
+	suspendedClients := 0
+	if reg.SuspendedClients != nil {
+		suspendedClients = len(reg.SuspendedClients)
+	}
+	result := reg.Count - expiredClients - suspendedClients
+	if result < 0 {
+		return 0
+	}
+	return result
 }
 
 // GetModelProviders returns provider identifiers that currently supply the given model.
@@ -864,25 +896,14 @@ func (r *ModelRegistry) GetModelProviders(modelID string) []string {
 }
 
 // GetModelInfo returns the registered ModelInfo for the given model ID, if present.
-// Returns nil if the model is unknown to the registry.
-// This function searches both direct model IDs and provider-prefixed keys (provider:modelID).
+// Uses canonical index for cross-provider routing.
 func (r *ModelRegistry) GetModelInfo(modelID string) *ModelInfo {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
-	// First, try direct lookup (for backward compatibility)
-	if reg, ok := r.models[modelID]; ok && reg != nil {
+	reg := r.findModelRegistration(modelID)
+	if reg != nil {
 		return reg.Info
-	}
-
-	// Search through all registered models for provider-prefixed keys
-	// Models are stored as "provider:modelID", so we need to check all keys
-	// that end with ":modelID"
-	suffix := ":" + modelID
-	for key, reg := range r.models {
-		if strings.HasSuffix(key, suffix) && reg != nil {
-			return reg.Info
-		}
 	}
 
 	return nil
