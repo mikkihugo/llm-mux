@@ -25,14 +25,14 @@ var ModelFamilies = map[string][]FamilyMember{
 		{Provider: "claude", ModelID: "claude-sonnet-4-5-20250929", Priority: 2},
 	},
 	"claude-sonnet-4-5-thinking": {
-		{Provider: "antigravity", ModelID: "gemini-claude-sonnet-4-5-thinking", Priority: 1},
-		{Provider: "claude", ModelID: "claude-sonnet-4-5-thinking", Priority: 2},
+		{Provider: "claude", ModelID: "claude-sonnet-4-5-thinking", Priority: 1},
+		{Provider: "antigravity", ModelID: "gemini-claude-sonnet-4-5-thinking", Priority: 2},
 	},
 
 	// Claude Opus 4.5 family
 	"claude-opus-4-5": {
-		{Provider: "kiro", ModelID: "claude-opus-4-5-20251101", Priority: 1},
-		{Provider: "claude", ModelID: "claude-opus-4-5-20251101", Priority: 2},
+		{Provider: "claude", ModelID: "claude-opus-4-5-20251101", Priority: 1},
+		{Provider: "kiro", ModelID: "claude-opus-4-5-20251101", Priority: 2},
 	},
 	"claude-opus-4-5-thinking": {
 		{Provider: "antigravity", ModelID: "gemini-claude-opus-4-5-thinking", Priority: 1},
@@ -182,4 +182,73 @@ func GetFamilyMembers(canonicalID string) []FamilyMember {
 		return sorted[i].Priority < sorted[j].Priority
 	})
 	return sorted
+}
+
+// ResolveAllProviders returns all available providers for a canonical model,
+// sorted by priority with load balancing within same priority level.
+// Returns the list of providers and whether any were found.
+func ResolveAllProviders(canonicalID string, availableProviders []string) (providers []string, found bool) {
+	family, ok := ModelFamilies[canonicalID]
+	if !ok {
+		return nil, false
+	}
+
+	// Create a set for O(1) lookup
+	availableSet := make(map[string]bool, len(availableProviders))
+	for _, p := range availableProviders {
+		availableSet[p] = true
+	}
+
+	// Group available members by priority
+	priorityGroups := make(map[int][]FamilyMember)
+	for _, member := range family {
+		if availableSet[member.Provider] {
+			priorityGroups[member.Priority] = append(priorityGroups[member.Priority], member)
+		}
+	}
+
+	if len(priorityGroups) == 0 {
+		return nil, false
+	}
+
+	// Get sorted priority levels
+	priorities := make([]int, 0, len(priorityGroups))
+	for p := range priorityGroups {
+		priorities = append(priorities, p)
+	}
+	sort.Ints(priorities)
+
+	// Build result: for each priority level, shuffle members for load balancing
+	result := make([]string, 0)
+	for _, priority := range priorities {
+		members := priorityGroups[priority]
+		// Shuffle within same priority for load balancing
+		if len(members) > 1 {
+			rand.Shuffle(len(members), func(i, j int) {
+				members[i], members[j] = members[j], members[i]
+			})
+		}
+		for _, m := range members {
+			result = append(result, m.Provider)
+		}
+	}
+
+	return result, true
+}
+
+// TranslateModelForProvider translates a canonical model ID to the provider-specific ID.
+// If the model is not a canonical ID or provider not in family, returns the original model.
+func TranslateModelForProvider(canonicalID, provider string) string {
+	family, ok := ModelFamilies[canonicalID]
+	if !ok {
+		return canonicalID
+	}
+
+	for _, member := range family {
+		if member.Provider == provider {
+			return member.ModelID
+		}
+	}
+
+	return canonicalID
 }

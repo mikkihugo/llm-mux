@@ -408,6 +408,14 @@ func (m *Manager) executeWithProvider(ctx context.Context, provider string, req 
 	if provider == "" {
 		return cliproxyexecutor.Response{}, &Error{Code: "provider_not_found", Message: "provider identifier is empty"}
 	}
+
+	// Translate canonical model ID to provider-specific ID
+	originalModel := req.Model
+	req.Model = registry.TranslateModelForProvider(req.Model, provider)
+	if req.Model != originalModel {
+		log.Debugf("Translated model %s -> %s for provider %s", originalModel, req.Model, provider)
+	}
+
 	tried := make(map[string]struct{})
 	var lastErr error
 	for {
@@ -456,6 +464,10 @@ func (m *Manager) executeCountWithProvider(ctx context.Context, provider string,
 	if provider == "" {
 		return cliproxyexecutor.Response{}, &Error{Code: "provider_not_found", Message: "provider identifier is empty"}
 	}
+
+	// Translate canonical model ID to provider-specific ID
+	req.Model = registry.TranslateModelForProvider(req.Model, provider)
+
 	tried := make(map[string]struct{})
 	var lastErr error
 	for {
@@ -504,6 +516,10 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 	if provider == "" {
 		return nil, &Error{Code: "provider_not_found", Message: "provider identifier is empty"}
 	}
+
+	// Translate canonical model ID to provider-specific ID
+	req.Model = registry.TranslateModelForProvider(req.Model, provider)
+
 	tried := make(map[string]struct{})
 	var lastErr error
 	for {

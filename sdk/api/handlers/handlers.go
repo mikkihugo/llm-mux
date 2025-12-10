@@ -218,8 +218,9 @@ func (h *BaseAPIHandler) getRequestDetails(modelName string) (providers []string
 	} else {
 		// Try model family resolution first
 		if resolved := h.resolveModelFamily(normalizedModel); resolved != nil {
-			providers = []string{resolved.Provider}
-			normalizedModel = resolved.ModelID
+			providers = resolved.Providers
+			// Keep canonical model - translation happens at execution time
+			normalizedModel = resolved.CanonicalModel
 		} else {
 			providers = util.GetProviderName(normalizedModel)
 		}
@@ -242,11 +243,12 @@ func (h *BaseAPIHandler) parseDynamicModel(modelName string) (providerName, mode
 	return "", modelName, false
 }
 
-// resolveModelFamily attempts to resolve a canonical model name to a specific provider.
+// resolveModelFamily attempts to resolve a canonical model name to available providers.
 // Returns nil if no family match is found or no provider is available.
+// The canonical model ID is preserved for translation at execution time.
 type familyResolution struct {
-	Provider string
-	ModelID  string
+	Providers      []string // All available providers, sorted by priority
+	CanonicalModel string   // Original canonical model ID for translation
 }
 
 func (h *BaseAPIHandler) resolveModelFamily(modelName string) *familyResolution {
@@ -260,12 +262,12 @@ func (h *BaseAPIHandler) resolveModelFamily(modelName string) *familyResolution 
 		return nil
 	}
 
-	provider, modelID, found := registry.ResolveModelFamily(modelName, availableProviders)
-	if !found {
+	providers, found := registry.ResolveAllProviders(modelName, availableProviders)
+	if !found || len(providers) == 0 {
 		return nil
 	}
 
-	return &familyResolution{Provider: provider, ModelID: modelID}
+	return &familyResolution{Providers: providers, CanonicalModel: modelName}
 }
 
 func cloneBytes(src []byte) []byte {
