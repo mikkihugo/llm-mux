@@ -17,15 +17,15 @@ Authenticate once with OAuth, then use OpenAI/Gemini/Claude/Ollama API formats t
 
 ```bash
 # Install
-brew tap nghyane/tap && brew install llm-mux
+curl -fsSL https://raw.githubusercontent.com/nghyane/llm-mux/main/install.sh | bash
 
 # Authenticate with any provider
 llm-mux --login              # Gemini CLI
 llm-mux --antigravity-login  # Antigravity (Gemini + Claude + GPT-OSS)
 llm-mux --copilot-login      # GitHub Copilot
 
-# Start service
-brew services start llm-mux
+# Start server
+llm-mux
 
 # Call Gemini using OpenAI format
 curl http://localhost:8318/v1/chat/completions \
@@ -141,18 +141,18 @@ docker run -p 8318:8318 -v ~/.config/llm-mux:/root/.config/llm-mux nghyane/llm-m
 
 ```bash
 go build -o llm-mux ./cmd/server/
-./llm-mux -config config.yaml
+./llm-mux --init  # Create config
+./llm-mux         # Start server
 ```
 
 ## Configuration
 
-```yaml
-port: 8318
-auth-dir: "~/.config/llm-mux/auth"
-use-canonical-translator: true
+```bash
+llm-mux --init  # Create default config at ~/.config/llm-mux/config.yaml
 ```
 
-Tokens stored in `~/.config/llm-mux/auth/` with auto-refresh.
+Config location: `~/.config/llm-mux/config.yaml`
+Tokens stored in: `~/.config/llm-mux/auth/` (auto-refresh)
 
 ## How It Works
 
