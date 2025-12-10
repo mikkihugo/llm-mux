@@ -1,8 +1,8 @@
 # llm-mux
 
-**Free LLM API gateway** that converts OAuth-authenticated CLI tools into OpenAI-compatible endpoints.
+**Free multi-format LLM gateway** - use any model with any API format, without API keys.
 
-Use Claude, Gemini, GPT, and other models **without API keys** - authenticate once with your existing accounts.
+Authenticate once with OAuth, access Claude/Gemini/GPT through OpenAI, Gemini, Claude, or Ollama API formats.
 
 ## Why llm-mux?
 
@@ -11,7 +11,7 @@ Use Claude, Gemini, GPT, and other models **without API keys** - authenticate on
 | Requires API keys | Uses OAuth from CLI tools |
 | Pay per token | Free (within CLI quotas) |
 | One provider per key | All providers, one endpoint |
-| Different APIs per provider | Unified OpenAI-compatible API |
+| Locked to one API format | Any format in, any format out |
 
 ## Quick Start
 
@@ -66,15 +66,18 @@ curl http://localhost:8318/v1/chat/completions \
 | **Cline** | `--cline-login` | minimax-m2, grok-code-fast-1 |
 | **Qwen** | `--qwen-login` | qwen3-coder-plus, qwen3-coder-flash |
 
-## API Endpoints
+## API Formats
 
-```
-POST /v1/chat/completions     # OpenAI Chat API
-POST /v1/completions          # Completions API
-GET  /v1/models               # List available models
-POST /v1beta/models/*         # Gemini-native API
-POST /api/chat                # Ollama-compatible
-```
+Use any format to access any provider:
+
+| Format | Endpoints |
+|--------|-----------|
+| **OpenAI** | `POST /v1/chat/completions`, `POST /v1/completions`, `GET /v1/models` |
+| **Gemini** | `POST /v1beta/models/{model}:generateContent`, `POST /v1beta/models/{model}:streamGenerateContent` |
+| **Claude** | `POST /v1/messages` |
+| **Ollama** | `POST /api/chat`, `POST /api/generate` |
+
+Example: Call Gemini model using OpenAI format, or call Claude model using Gemini format.
 
 ## Architecture
 
