@@ -86,16 +86,18 @@ type OpenAIMeta struct {
 	NativeFinishReason string
 	ThoughtsTokenCount int
 	Logprobs           any
+	GroundingMetadata  *GroundingMetadata // Google Search grounding metadata
 }
 
 
 // CandidateResult holds the result of a single candidate/choice from the model.
 // Used when candidateCount/n > 1 to return multiple alternatives.
 type CandidateResult struct {
-	Index        int          // Candidate index (0-based)
-	Messages     []Message    // Messages from this candidate
-	FinishReason FinishReason // Why this candidate stopped
-	Logprobs     any          // Log probabilities for this candidate (OpenAI format)
+	Index             int                // Candidate index (0-based)
+	Messages          []Message          // Messages from this candidate
+	FinishReason      FinishReason       // Why this candidate stopped
+	Logprobs          any                // Log probabilities for this candidate (OpenAI format)
+	GroundingMetadata *GroundingMetadata // Google Search grounding metadata for this candidate
 }
 
 // ToolCall represents a request from the model to execute a tool.
@@ -172,9 +174,10 @@ type CodeExecutionPart struct {
 
 // GroundingMetadata contains search grounding information from Gemini.
 type GroundingMetadata struct {
-	SearchEntryPoint *SearchEntryPoint `json:"searchEntryPoint,omitempty"`
-	GroundingChunks  []GroundingChunk  `json:"groundingChunks,omitempty"`
-	WebSearchQueries []string          `json:"webSearchQueries,omitempty"`
+	SearchEntryPoint  *SearchEntryPoint  `json:"searchEntryPoint,omitempty"`
+	GroundingChunks   []GroundingChunk   `json:"groundingChunks,omitempty"`
+	GroundingSupports []GroundingSupport `json:"groundingSupports,omitempty"`
+	WebSearchQueries  []string           `json:"webSearchQueries,omitempty"`
 }
 
 // SearchEntryPoint contains the rendered search entry point HTML.
@@ -189,8 +192,22 @@ type GroundingChunk struct {
 
 // WebGrounding contains web source information.
 type WebGrounding struct {
-	URI   string `json:"uri,omitempty"`
-	Title string `json:"title,omitempty"`
+	URI    string `json:"uri,omitempty"`
+	Title  string `json:"title,omitempty"`
+	Domain string `json:"domain,omitempty"`
+}
+
+// GroundingSupport links response segments to grounding sources.
+type GroundingSupport struct {
+	Segment               *GroundingSegment `json:"segment,omitempty"`
+	GroundingChunkIndices []int             `json:"groundingChunkIndices,omitempty"`
+}
+
+// GroundingSegment identifies a portion of the response text.
+type GroundingSegment struct {
+	StartIndex int    `json:"startIndex,omitempty"`
+	EndIndex   int    `json:"endIndex,omitempty"`
+	Text       string `json:"text,omitempty"`
 }
 
 type Message struct {

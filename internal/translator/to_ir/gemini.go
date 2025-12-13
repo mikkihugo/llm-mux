@@ -322,11 +322,18 @@ func ParseGeminiResponseCandidates(rawJSON []byte, schemaCtx *ir.ToolSchemaConte
 			finishReason = ir.MapGeminiFinishReason(fr.String())
 		}
 
+		// Parse grounding metadata for this candidate
+		var groundingMeta *ir.GroundingMetadata
+		if gm := candidate.Get("groundingMetadata"); gm.Exists() {
+			groundingMeta = parseGroundingMetadata(gm)
+		}
+
 		results = append(results, ir.CandidateResult{
-			Index:        i,
-			Messages:     []ir.Message{*msg},
-			FinishReason: finishReason,
-			Logprobs:     parseGeminiLogprobs(candidate),
+			Index:             i,
+			Messages:          []ir.Message{*msg},
+			FinishReason:      finishReason,
+			Logprobs:          parseGeminiLogprobs(candidate),
+			GroundingMetadata: groundingMeta,
 		})
 	}
 
@@ -411,6 +418,13 @@ func ParseGeminiResponseMetaWithContext(rawJSON []byte, schemaCtx *ir.ToolSchema
 	candidates := parsed.Get("candidates").Array()
 	if len(candidates) == 0 {
 		return nil, usage, meta, nil
+	}
+
+	// Parse grounding metadata from candidates[0] (Gemini 3+) or root level (legacy)
+	if gm := candidates[0].Get("groundingMetadata"); gm.Exists() {
+		meta.GroundingMetadata = parseGroundingMetadata(gm)
+	} else if gm := parsed.Get("groundingMetadata"); gm.Exists() {
+		meta.GroundingMetadata = parseGroundingMetadata(gm)
 	}
 
 	parts := candidates[0].Get("content.parts").Array()
@@ -689,11 +703,32 @@ func parseGroundingMetadata(gm gjson.Result) *ir.GroundingMetadata {
 			gc := ir.GroundingChunk{}
 			if web := chunk.Get("web"); web.Exists() {
 				gc.Web = &ir.WebGrounding{
-					URI:   web.Get("uri").String(),
-					Title: web.Get("title").String(),
+					URI:    web.Get("uri").String(),
+					Title:  web.Get("title").String(),
+					Domain: web.Get("domain").String(),
 				}
 			}
 			meta.GroundingChunks = append(meta.GroundingChunks, gc)
+		}
+	}
+
+	// Grounding supports (text segment to source mappings)
+	if supports := gm.Get("groundingSupports"); supports.Exists() && supports.IsArray() {
+		for _, support := range supports.Array() {
+			gs := ir.GroundingSupport{}
+			if segment := support.Get("segment"); segment.Exists() {
+				gs.Segment = &ir.GroundingSegment{
+					StartIndex: int(segment.Get("startIndex").Int()),
+					EndIndex:   int(segment.Get("endIndex").Int()),
+					Text:       segment.Get("text").String(),
+				}
+			}
+			if indices := support.Get("groundingChunkIndices"); indices.Exists() && indices.IsArray() {
+				for _, idx := range indices.Array() {
+					gs.GroundingChunkIndices = append(gs.GroundingChunkIndices, int(idx.Int()))
+				}
+			}
+			meta.GroundingSupports = append(meta.GroundingSupports, gs)
 		}
 	}
 

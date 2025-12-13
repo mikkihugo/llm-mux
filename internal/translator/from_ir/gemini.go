@@ -713,6 +713,9 @@ func ToGeminiChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 
 	case ir.EventTypeFinish:
 		candidate["finishReason"] = "STOP"
+		if event.GroundingMetadata != nil {
+			candidate["groundingMetadata"] = buildGroundingMetadataMap(event.GroundingMetadata)
+		}
 		if event.Usage != nil {
 			chunk["usageMetadata"] = map[string]any{
 				"promptTokenCount":     event.Usage.PromptTokens,
@@ -737,6 +740,74 @@ func ToGeminiChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 
 	// Gemini uses newline-delimited JSON (not SSE format)
 	return append(jsonBytes, '\n'), nil
+}
+
+// buildGroundingMetadataMap converts GroundingMetadata to a map for JSON output.
+func buildGroundingMetadataMap(gm *ir.GroundingMetadata) map[string]any {
+	if gm == nil {
+		return nil
+	}
+
+	result := map[string]any{}
+
+	if len(gm.WebSearchQueries) > 0 {
+		result["webSearchQueries"] = gm.WebSearchQueries
+	}
+
+	if gm.SearchEntryPoint != nil && gm.SearchEntryPoint.RenderedContent != "" {
+		result["searchEntryPoint"] = map[string]any{
+			"renderedContent": gm.SearchEntryPoint.RenderedContent,
+		}
+	}
+
+	if len(gm.GroundingChunks) > 0 {
+		chunks := make([]map[string]any, 0, len(gm.GroundingChunks))
+		for _, chunk := range gm.GroundingChunks {
+			if chunk.Web != nil {
+				webMap := map[string]any{
+					"uri":   chunk.Web.URI,
+					"title": chunk.Web.Title,
+				}
+				if chunk.Web.Domain != "" {
+					webMap["domain"] = chunk.Web.Domain
+				}
+				chunks = append(chunks, map[string]any{"web": webMap})
+			}
+		}
+		if len(chunks) > 0 {
+			result["groundingChunks"] = chunks
+		}
+	}
+
+	if len(gm.GroundingSupports) > 0 {
+		supports := make([]map[string]any, 0, len(gm.GroundingSupports))
+		for _, s := range gm.GroundingSupports {
+			support := map[string]any{}
+			if s.Segment != nil {
+				segment := map[string]any{
+					"text": s.Segment.Text,
+				}
+				if s.Segment.StartIndex > 0 {
+					segment["startIndex"] = s.Segment.StartIndex
+				}
+				if s.Segment.EndIndex > 0 {
+					segment["endIndex"] = s.Segment.EndIndex
+				}
+				support["segment"] = segment
+			}
+			if len(s.GroundingChunkIndices) > 0 {
+				support["groundingChunkIndices"] = s.GroundingChunkIndices
+			}
+			supports = append(supports, support)
+		}
+		if len(supports) > 0 {
+			result["groundingSupports"] = supports
+		}
+	}
+
+	result["retrievalMetadata"] = map[string]any{}
+
+	return result
 }
 
 // --- Gemini CLI Provider ---
