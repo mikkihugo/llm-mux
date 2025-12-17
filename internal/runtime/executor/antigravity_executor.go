@@ -24,6 +24,7 @@ import (
 	cliproxyexecutor "github.com/nghyane/llm-mux/sdk/cliproxy/executor"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -665,9 +666,8 @@ func (e *AntigravityExecutor) buildRequest(ctx context.Context, auth *cliproxyau
 			projectID = strings.TrimSpace(pid)
 		}
 	}
-	payload = geminiToAntigravity(modelName, payload, projectID, metadata)
-	// Model alias mapping is now handled inside geminiToAntigravity
-	// payload, _ = sjson.SetBytes(payload, "model", alias2ModelName(modelName))
+	payload = geminiToAntigravity(modelName, payload, projectID)
+	payload, _ = sjson.SetBytes(payload, "model", alias2ModelName(modelName))
 
 	httpReq, errReq := http.NewRequestWithContext(ctx, http.MethodPost, requestURL.String(), bytes.NewReader(payload))
 	if errReq != nil {
@@ -819,136 +819,72 @@ func resolveCustomAntigravityBaseURL(auth *cliproxyauth.Auth) string {
 // Optimized: single json.Unmarshal → in-memory modifications → single json.Marshal
 // The projectID parameter should be the real GCP project ID from auth metadata.
 // If empty, a random project ID will be generated (legacy fallback).
-func geminiToAntigravity(modelName string, payload []byte, projectID string, metadata map[string]any) []byte {
-	var root map[string]any
-	if err := json.Unmarshal(payload, &root); err != nil {
-		return payload
-	}
+func geminiToAntigravity(modelName string, payload []byte, projectID string) []byte {
+	template, _ := sjson.Set(string(payload), "model", modelName)
+	template, _ = sjson.Set(template, "userAgent", "antigravity")
 
-	// Optimize: Set correct model name (alias) directly to avoid external re-parsing
-	// root["model"] = alias2ModelName(modelName)
-	root["userAgent"] = "antigravity"
 	// Use real project ID from auth if available, otherwise generate random (legacy fallback)
 	if projectID != "" {
-		root["project"] = projectID
+		template, _ = sjson.Set(template, "project", projectID)
 	} else {
-		generatedID := generateProjectID()
-		log.Debugf("antigravity: using generated project ID (legacy fallback) - project_id not in auth metadata")
-		root["project"] = generatedID
+		template, _ = sjson.Set(template, "project", generateProjectID())
 	}
-	root["requestId"] = generateRequestID()
+	template, _ = sjson.Set(template, "requestId", generateRequestID())
+	template, _ = sjson.Set(template, "request.sessionId", generateSessionID())
 
-	// IR translator always outputs CLI format with "request" wrapper
-	request, _ := root["request"].(map[string]any)
-	if request == nil {
-		request = make(map[string]any)
-		root["request"] = request
-	}
-	request["sessionId"] = generateSessionID()
-	delete(request, "safetySettings")
+	template, _ = sjson.Delete(template, "request.safetySettings")
+	template, _ = sjson.Set(template, "request.toolConfig.functionCallingConfig.mode", "VALIDATED")
 
-	// Ensure generationConfig exists for thinking logic
-	var genConfig map[string]any
-	if gc, ok := request["generationConfig"].(map[string]any); ok {
-		genConfig = gc
-	} else {
-		genConfig = make(map[string]any)
-		request["generationConfig"] = genConfig
-	}
-	delete(genConfig, "maxOutputTokens")
-
-	// INTELLIGENT THINKING LOGIC OPTIMIZATION:
-	// Instead of pre-processing payload string (double parse), apply thinking config directly to map here.
-
-	// 1. Determine thinking config from metadata or defaults
-	budgetOverride, includeOverride, hasThinking := util.GeminiThinkingFromMetadata(metadata)
-	if !hasThinking {
-		if budget, include, auto := util.GetAutoAppliedThinkingConfig(modelName); auto {
-			budgetOverride = &budget
-			includeOverride = &include
-			hasThinking = true
+	if !strings.HasPrefix(modelName, "gemini-3-") {
+		if thinkingLevel := gjson.Get(template, "request.generationConfig.thinkingConfig.thinkingLevel"); thinkingLevel.Exists() {
+			template, _ = sjson.Delete(template, "request.generationConfig.thinkingConfig.thinkingLevel")
+			template, _ = sjson.Set(template, "request.generationConfig.thinkingConfig.thinkingBudget", -1)
 		}
 	}
 
-	// 2. Normalize budget if applicable
-	if hasThinking && budgetOverride != nil && util.ModelSupportsThinking(modelName) {
-		norm := util.NormalizeThinkingBudget(modelName, *budgetOverride)
-		budgetOverride = &norm
-	}
+	if strings.Contains(modelName, "claude") {
+		gjson.Get(template, "request.tools").ForEach(func(key, tool gjson.Result) bool {
+			tool.Get("functionDeclarations").ForEach(func(funKey, funcDecl gjson.Result) bool {
+				if funcDecl.Get("parametersJsonSchema").Exists() {
+					template, _ = sjson.SetRaw(template, fmt.Sprintf("request.tools.%d.functionDeclarations.%d.parameters", key.Int(), funKey.Int()), funcDecl.Get("parametersJsonSchema").Raw)
+					template, _ = sjson.Delete(template, fmt.Sprintf("request.tools.%d.functionDeclarations.%d.parameters.$schema", key.Int(), funKey.Int()))
+					template, _ = sjson.Delete(template, fmt.Sprintf("request.tools.%d.functionDeclarations.%d.parametersJsonSchema", key.Int(), funKey.Int()))
+				}
+				return true
+			})
+			return true
+		})
 
-	// 3. Apply to map if thinking is enabled/supported
-	lowerModel := strings.ToLower(modelName)
-	supportsThinking := strings.HasPrefix(modelName, "gemini-3-") ||
-		(strings.Contains(lowerModel, "claude") && strings.Contains(lowerModel, "thinking"))
+		strJSON := string(template)
+		strJSON = util.DeleteKey(strJSON, "request.generationConfig.maxOutputTokens")
+		strJSON = util.DeleteKey(strJSON, "request.tools.#.functionDeclarations.#.parameters.$schema")
+		strJSON = util.DeleteKey(strJSON, "request.tools.#.functionDeclarations.#.parameters.maxItems")
+		strJSON = util.DeleteKey(strJSON, "request.tools.#.functionDeclarations.#.parameters.minItems")
+		strJSON = util.DeleteKey(strJSON, "request.tools.#.functionDeclarations.#.parameters.minLength")
+		strJSON = util.DeleteKey(strJSON, "request.tools.#.functionDeclarations.#.parameters.maxLength")
+		strJSON = util.DeleteKey(strJSON, "request.tools.#.functionDeclarations.#.parameters.exclusiveMinimum")
+		strJSON = util.DeleteKey(strJSON, "request.tools.#.functionDeclarations.#.parameters.exclusiveMaximum")
+		strJSON = util.DeleteKey(strJSON, "request.tools.#.functionDeclarations.#.parameters.$ref")
+		strJSON = util.DeleteKey(strJSON, "request.tools.#.functionDeclarations.#.parameters.$defs")
 
-	if hasThinking && supportsThinking {
-		// Create or update thinkingConfig map
-		var tc map[string]any
-		if existing, ok := genConfig["thinkingConfig"].(map[string]any); ok {
-			tc = existing
-		} else {
-			tc = make(map[string]any)
-			genConfig["thinkingConfig"] = tc
-		}
-
-		if includeOverride != nil {
-			tc["include_thoughts"] = *includeOverride
-		}
-		if budgetOverride != nil {
-			// Check for zero budget (disabled)
-			if *budgetOverride <= 0 {
-				delete(genConfig, "thinkingConfig")
-			} else {
-				tc["thinkingBudget"] = *budgetOverride
-			}
-		}
-	} else {
-		// Remove thinking config if not supported or not enabled
-		delete(genConfig, "thinkingConfig")
-	}
-
-	// Ensure all function parameters have type "object" (Gemini requirement)
-	if tools, ok := request["tools"].([]any); ok {
-		for _, tool := range tools {
-			if tm, ok := tool.(map[string]any); ok {
-				if fds, ok := tm["functionDeclarations"].([]any); ok {
-					for _, fd := range fds {
-						if fdm, ok := fd.(map[string]any); ok {
-							var schema map[string]any
-							if s, ok := fdm["parametersJsonSchema"].(map[string]any); ok {
-								schema = s
-							} else if s, ok := fdm["parameters"].(map[string]any); ok {
-								schema = s
-							}
-							if schema != nil {
-								// Gemini requires parameters to have type "object"
-								if schema["type"] == nil {
-									schema["type"] = "object"
-								}
-								if schema["properties"] == nil {
-									schema["properties"] = map[string]any{}
-								}
-								// Remove $schema for all models (Gemini API rejects it in functionDeclarations)
-								delete(schema, "$schema")
-
-								// Note: We MUST NOT use CleanJsonSchemaForClaude here.
-								// Antigravity expects standard Gemini/OpenAPI parameter schemas.
-								// It handles the conversion to Claude's input_schema internally.
-
-								fdm["parameters"] = schema
-								delete(fdm, "parametersJsonSchema")
-							}
-						}
-					}
+		paths := make([]string, 0)
+		util.Walk(gjson.Parse(strJSON), "", "anyOf", &paths)
+		for _, p := range paths {
+			anyOf := gjson.Get(strJSON, p)
+			if anyOf.IsArray() {
+				anyOfItems := anyOf.Array()
+				if len(anyOfItems) > 0 {
+					strJSON, _ = sjson.SetRaw(strJSON, p[:len(p)-len(".anyOf")], anyOfItems[0].Raw)
 				}
 			}
 		}
+		template = strJSON
+
+	} else {
+		template, _ = sjson.Delete(template, "request.generationConfig.maxOutputTokens")
 	}
 
-	if result, err := json.Marshal(root); err == nil {
-		return result
-	}
-	return payload
+	return []byte(template)
 }
 
 func generateRequestID() string {
@@ -986,10 +922,12 @@ func modelName2Alias(modelName string) string {
 		return "gemini-3-pro-image-preview"
 	case "gemini-3-pro-high":
 		return "gemini-3-pro-preview"
-	// Claude models: keep canonical names (no gemini- prefix)
-	// This allows direct lookup via CanonicalID without extra mapping
-	case "claude-sonnet-4-5", "claude-sonnet-4-5-thinking", "claude-opus-4-5-thinking":
-		return modelName
+	case "claude-sonnet-4-5":
+		return "gemini-claude-sonnet-4-5"
+	case "claude-sonnet-4-5-thinking":
+		return "gemini-claude-sonnet-4-5-thinking"
+	case "claude-opus-4-five-thinking":
+		return "gemini-claude-opus-4-five-thinking"
 	case "chat_20706", "chat_23310", "gemini-2.5-flash-thinking", "gemini-3-pro-low", "gemini-2.5-pro":
 		return ""
 	default:
@@ -1005,14 +943,12 @@ func alias2ModelName(modelName string) string {
 		return "gemini-3-pro-image"
 	case "gemini-3-pro-preview":
 		return "gemini-3-pro-high"
-	// Claude models: accept both prefixed and canonical names
-	// Maps to upstream model name for API call
-	case "gemini-claude-sonnet-4-5", "claude-sonnet-4-5":
+	case "gemini-claude-sonnet-4-5":
 		return "claude-sonnet-4-5"
-	case "gemini-claude-sonnet-4-5-thinking", "claude-sonnet-4-5-thinking":
+	case "gemini-claude-sonnet-4-5-thinking":
 		return "claude-sonnet-4-5-thinking"
-	case "gemini-claude-opus-4-5-thinking", "claude-opus-4-5-thinking":
-		return "claude-opus-4-5-thinking"
+	case "gemini-claude-opus-4-five-thinking":
+		return "claude-opus-4-five-thinking"
 	default:
 		return modelName
 	}
