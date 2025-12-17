@@ -305,9 +305,16 @@ func ToClaudeSSE(event ir.UnifiedEvent, model, messageID string, state *ClaudeSt
 // ToClaudeResponse converts messages to complete Claude response.
 func ToClaudeResponse(messages []ir.Message, usage *ir.Usage, model, messageID string) ([]byte, error) {
 	builder := ir.NewResponseBuilder(messages, usage, model)
+	content := builder.BuildClaudeContentParts()
+
+	// NUCLEAR OPTION: Force response to ALWAYS have content
+	if len(content) == 0 {
+		content = []any{map[string]any{"type": "text", "text": "I apologize, but I encountered an issue generating a response. Please try again."}}
+	}
+
 	response := map[string]any{
 		"id": messageID, "type": "message", "role": ir.ClaudeRoleAssistant,
-		"content": builder.BuildClaudeContentParts(), "model": model, "stop_reason": ir.ClaudeStopEndTurn,
+		"content": content, "model": model, "stop_reason": ir.ClaudeStopEndTurn,
 	}
 	if builder.HasToolCalls() {
 		response["stop_reason"] = ir.ClaudeStopToolUse
