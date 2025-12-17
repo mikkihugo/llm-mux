@@ -313,12 +313,15 @@ func buildClaudeContentParts(msg ir.Message, includeToolCalls bool) []any {
 	}
 	parts := make([]any, 0, capacity)
 
-	// Check if we have thinking content
+	// Check if we have thinking content and text/tool content
 	hasThinking := false
+	hasTextOrImage := false
 	for i := range msg.Content {
-		if msg.Content[i].Type == ir.ContentTypeReasoning {
+		switch msg.Content[i].Type {
+		case ir.ContentTypeReasoning:
 			hasThinking = true
-			break
+		case ir.ContentTypeText, ir.ContentTypeImage:
+			hasTextOrImage = true
 		}
 	}
 
@@ -365,6 +368,13 @@ func buildClaudeContentParts(msg ir.Message, includeToolCalls bool) []any {
 			parts = append(parts, toolUse)
 		}
 	}
+
+	// Client requirement: Response must have text or tool calls, not just thinking
+	// If we only have thinking content (no text, no tool calls), add empty text block
+	if hasThinking && !hasTextOrImage && len(msg.ToolCalls) == 0 {
+		parts = append(parts, map[string]any{"type": ir.ClaudeBlockText, "text": ""})
+	}
+
 	return parts
 }
 
