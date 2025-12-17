@@ -46,3 +46,5 @@ _wgun/
 # macOS
 .DS_Store
 ._*
+gitstore/
+.env
