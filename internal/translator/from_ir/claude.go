@@ -253,7 +253,6 @@ func (p *ClaudeProvider) ParseStreamChunkWithState(chunkJSON []byte, state *ir.C
 }
 
 // ToClaudeSSE converts event to Claude SSE format.
-// ToClaudeSSE converts event to Claude SSE format.
 // Optimized: uses pooled builders and fast path for text deltas.
 func ToClaudeSSE(event ir.UnifiedEvent, model, messageID string, state *ClaudeStreamState) ([]byte, error) {
 	// Get pooled builder
@@ -288,10 +287,6 @@ func ToClaudeSSE(event ir.UnifiedEvent, model, messageID string, state *ClaudeSt
 		}
 		if state != nil {
 			state.FinishSent = true
-			// Debug: log state before finish
-			if !state.HasTextContent && !state.HasToolCalls {
-				// This will trigger empty text injection
-			}
 		}
 		emitFinishTo(result, event.Usage, state)
 	case ir.EventTypeError:
@@ -408,7 +403,10 @@ var sseBufferPool = sync.Pool{
 }
 
 func formatSSE(eventType string, data any) string {
-	jsonData, _ := json.Marshal(data)
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return ""
+	}
 
 	// Calculate required size: "event: " + eventType + "\ndata: " + json + "\n\n"
 	size := 7 + len(eventType) + 7 + len(jsonData) + 2

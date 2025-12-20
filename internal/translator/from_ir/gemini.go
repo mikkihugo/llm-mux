@@ -593,8 +593,14 @@ func (p *GeminiProvider) fixImageAspectRatioForPreview(root map[string]any, aspe
 	}
 
 	// Create new parts for the first content message
-	firstContent := contents[0].(map[string]any)
-	existingParts := firstContent["parts"].([]any)
+	firstContent, ok := contents[0].(map[string]any)
+	if !ok {
+		return
+	}
+	existingParts, ok := firstContent["parts"].([]any)
+	if !ok {
+		return
+	}
 
 	newParts := []any{
 		map[string]any{

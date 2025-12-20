@@ -110,9 +110,14 @@ func convertRequestToIR(from sdktranslator.Format, model string, payload []byte,
 		irReq.Model = model
 	}
 
-	// Store metadata for provider-specific handling
+	// Store metadata for provider-specific handling (merge with existing)
 	if metadata != nil {
-		irReq.Metadata = metadata
+		if irReq.Metadata == nil {
+			irReq.Metadata = make(map[string]any)
+		}
+		for k, v := range metadata {
+			irReq.Metadata[k] = v
+		}
 	}
 
 	// Apply thinking overrides from metadata if present

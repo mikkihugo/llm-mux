@@ -140,7 +140,9 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 			if gs := t.Get("googleSearch"); gs.Exists() {
 				var gsVal any
 				if gs.IsObject() {
-					json.Unmarshal([]byte(gs.Raw), &gsVal)
+					if err := json.Unmarshal([]byte(gs.Raw), &gsVal); err != nil {
+						gsVal = map[string]any{}
+					}
 				} else {
 					gsVal = map[string]any{}
 				}
@@ -149,7 +151,9 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 			if gsr := t.Get("googleSearchRetrieval"); gsr.Exists() {
 				var gsrVal any
 				if gsr.IsObject() {
-					json.Unmarshal([]byte(gsr.Raw), &gsrVal)
+					if err := json.Unmarshal([]byte(gsr.Raw), &gsrVal); err != nil {
+						gsrVal = map[string]any{}
+					}
 				} else {
 					gsrVal = map[string]any{}
 				}
@@ -158,7 +162,9 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 			if ce := t.Get("codeExecution"); ce.Exists() {
 				var ceVal any
 				if ce.IsObject() {
-					json.Unmarshal([]byte(ce.Raw), &ceVal)
+					if err := json.Unmarshal([]byte(ce.Raw), &ceVal); err != nil {
+						ceVal = map[string]any{}
+					}
 				} else {
 					ceVal = map[string]any{}
 				}
@@ -167,7 +173,9 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 			if uc := t.Get("urlContext"); uc.Exists() {
 				var ucVal any
 				if uc.IsObject() {
-					json.Unmarshal([]byte(uc.Raw), &ucVal)
+					if err := json.Unmarshal([]byte(uc.Raw), &ucVal); err != nil {
+						ucVal = map[string]any{}
+					}
 				} else {
 					ucVal = map[string]any{}
 				}

@@ -120,11 +120,10 @@ func ParseClaudeRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 				req.Thinking.ThinkingBudget = &b
 			}
 		} else if thinking.Get("type").String() == "disabled" {
-			// Note: -1 for auto is not needed with pointer - nil means auto
-		} else if thinking.Get("type").String() == "disabled" {
 			zero := int32(0)
 			req.Thinking = &ir.ThinkingConfig{IncludeThoughts: false, ThinkingBudget: &zero}
 		}
+		// Note: nil Thinking means auto/default behavior
 	}
 
 	// Metadata
@@ -163,8 +162,6 @@ func parseClaudeMessage(m gjson.Result) ir.Message {
 		msg.Content = append(msg.Content, ir.ContentPart{Type: ir.ContentTypeText, Text: content.String()})
 		return msg
 	}
-
-	var firstToolID string
 
 	if content.IsArray() {
 		for _, block := range content.Array() {
@@ -211,10 +208,6 @@ func parseClaudeMessage(m gjson.Result) ir.Message {
 					sigStr := toolID[idx+len("__SIG__"):]
 					toolID = toolID[:idx]
 					thoughtSig = []byte(sigStr)
-				}
-
-				if firstToolID == "" {
-					firstToolID = toolID
 				}
 				inputRaw := block.Get("input").Raw
 				if inputRaw == "" {
@@ -277,9 +270,6 @@ func ParseClaudeResponse(rawJSON []byte) ([]ir.Message, *ir.Usage, error) {
 
 	for _, block := range content.Array() {
 		ir.ParseClaudeContentBlock(block, &msg)
-		if block.Get("type").String() == "thinking" {
-			// No-op: handled by UseParseClaudeContentBlock
-		}
 	}
 
 	if len(msg.Content) > 0 || len(msg.ToolCalls) > 0 {
