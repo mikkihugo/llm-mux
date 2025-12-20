@@ -815,6 +815,11 @@ func parseGeminiUsage(parsed gjson.Result) *ir.Usage {
 		usage.PromptTokensDetails.CachedTokens = cachedContentTokens.Int()
 	}
 
+	// Parse tool use tokens (Gemini-specific)
+	if toolUseTokens := u.Get("toolUsePromptTokenCount"); toolUseTokens.Exists() && toolUseTokens.Int() > 0 {
+		usage.ToolUsePromptTokens = toolUseTokens.Int()
+	}
+
 	// Parse completion_tokens_details from Gemini
 	// Gemini returns reasoning tokens as part of candidatesTokenCount
 	if thoughtsTokens > 0 {

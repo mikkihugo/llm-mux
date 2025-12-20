@@ -98,10 +98,10 @@ const (
 type Outcome string
 
 const (
-	OutcomeUnspecified       Outcome = "OUTCOME_UNSPECIFIED"
-	OutcomeOK                Outcome = "OUTCOME_OK"
-	OutcomeFailed            Outcome = "OUTCOME_FAILED"
-	OutcomeDeadlineExceeded  Outcome = "OUTCOME_DEADLINE_EXCEEDED"
+	OutcomeUnspecified      Outcome = "OUTCOME_UNSPECIFIED"
+	OutcomeOK               Outcome = "OUTCOME_OK"
+	OutcomeFailed           Outcome = "OUTCOME_FAILED"
+	OutcomeDeadlineExceeded Outcome = "OUTCOME_DEADLINE_EXCEEDED"
 )
 
 type UnifiedEvent struct {
@@ -135,6 +135,7 @@ type Usage struct {
 	RejectedPredictionTokens int64
 	CacheCreationInputTokens int64
 	CacheReadInputTokens     int64
+	ToolUsePromptTokens      int64 // Gemini: tokens used for tool/function call context
 	PromptTokensDetails      *PromptTokensDetails
 	CompletionTokensDetails  *CompletionTokensDetails
 }
@@ -162,7 +163,6 @@ type OpenAIMeta struct {
 	Logprobs           any
 	GroundingMetadata  *GroundingMetadata // Google Search grounding metadata
 }
-
 
 // CandidateResult holds the result of a single candidate/choice from the model.
 // Used when candidateCount/n > 1 to return multiple alternatives.
@@ -250,12 +250,12 @@ type CodeExecutionPart struct {
 // GroundingMetadata contains search grounding information from Gemini.
 // Matches Google Gen AI SDK GroundingMetadata structure.
 type GroundingMetadata struct {
-	SearchEntryPoint   *SearchEntryPoint   `json:"searchEntryPoint,omitempty"`
-	GroundingChunks    []*GroundingChunk   `json:"groundingChunks,omitempty"`   // Pointer slice per SDK
-	GroundingSupports  []*GroundingSupport `json:"groundingSupports,omitempty"` // Pointer slice per SDK
-	WebSearchQueries   []string            `json:"webSearchQueries,omitempty"`
-	RetrievalQueries   []string            `json:"retrievalQueries,omitempty"`   // SDK field
-	RetrievalMetadata  *RetrievalMetadata  `json:"retrievalMetadata,omitempty"`  // SDK field
+	SearchEntryPoint  *SearchEntryPoint   `json:"searchEntryPoint,omitempty"`
+	GroundingChunks   []*GroundingChunk   `json:"groundingChunks,omitempty"`   // Pointer slice per SDK
+	GroundingSupports []*GroundingSupport `json:"groundingSupports,omitempty"` // Pointer slice per SDK
+	WebSearchQueries  []string            `json:"webSearchQueries,omitempty"`
+	RetrievalQueries  []string            `json:"retrievalQueries,omitempty"`  // SDK field
+	RetrievalMetadata *RetrievalMetadata  `json:"retrievalMetadata,omitempty"` // SDK field
 }
 
 // SearchEntryPoint contains the rendered search entry point.
@@ -402,10 +402,10 @@ type FunctionCallingConfig struct {
 // ThinkingConfig controls the reasoning capabilities of the model.
 // Matches Google Gen AI SDK ThinkingConfig structure.
 type ThinkingConfig struct {
-	IncludeThoughts bool           // Whether to include thoughts in response
-	ThinkingBudget  *int32         // Budget in tokens (pointer per SDK)
-	ThinkingLevel   ThinkingLevel  // Level of thinking (SDK enum)
-	Summary         string         // Reasoning summary mode: "auto", "concise", "detailed"
+	IncludeThoughts bool            // Whether to include thoughts in response
+	ThinkingBudget  *int32          // Budget in tokens (pointer per SDK)
+	ThinkingLevel   ThinkingLevel   // Level of thinking (SDK enum)
+	Summary         string          // Reasoning summary mode: "auto", "concise", "detailed"
 	Effort          ReasoningEffort // Reasoning effort level
 }
 

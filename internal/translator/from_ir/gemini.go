@@ -672,6 +672,9 @@ func ToGeminiResponseMeta(messages []ir.Message, usage *ir.Usage, model string, 
 		if usage.PromptTokensDetails != nil && usage.PromptTokensDetails.CachedTokens > 0 {
 			usageMetadata["cachedContentTokenCount"] = usage.PromptTokensDetails.CachedTokens
 		}
+		if usage.ToolUsePromptTokens > 0 {
+			usageMetadata["toolUsePromptTokenCount"] = usage.ToolUsePromptTokens
+		}
 		response["usageMetadata"] = usageMetadata
 	}
 
@@ -777,6 +780,9 @@ func ToGeminiChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 			}
 			if event.Usage.PromptTokensDetails != nil && event.Usage.PromptTokensDetails.CachedTokens > 0 {
 				usageMetadata["cachedContentTokenCount"] = event.Usage.PromptTokensDetails.CachedTokens
+			}
+			if event.Usage.ToolUsePromptTokens > 0 {
+				usageMetadata["toolUsePromptTokenCount"] = event.Usage.ToolUsePromptTokens
 			}
 			chunk["usageMetadata"] = usageMetadata
 		}
