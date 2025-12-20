@@ -575,9 +575,16 @@ func resolveGeminiProjectID(auth *cliproxyauth.Auth) string {
 	if auth == nil {
 		return ""
 	}
-	if runtime := auth.Runtime; runtime != nil {
-		if virtual, ok := runtime.(*geminicli.VirtualCredential); ok && virtual != nil {
+	// Check if runtime is a VirtualCredential (handles AuthRuntimeData unwrapping via IsVirtual)
+	if geminicli.IsVirtual(auth.Runtime) {
+		if virtual, ok := auth.Runtime.(*geminicli.VirtualCredential); ok && virtual != nil {
 			return strings.TrimSpace(virtual.ProjectID)
+		}
+		// If wrapped in AuthRuntimeData, extract the actual VirtualCredential
+		if rd, ok := auth.Runtime.(*cliproxyauth.AuthRuntimeData); ok && rd != nil {
+			if virtual, ok := rd.ProviderData.(*geminicli.VirtualCredential); ok && virtual != nil {
+				return strings.TrimSpace(virtual.ProjectID)
+			}
 		}
 	}
 	return strings.TrimSpace(stringValue(auth.Metadata, "project_id"))

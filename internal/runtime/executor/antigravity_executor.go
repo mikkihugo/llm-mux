@@ -145,7 +145,8 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, auth *cliproxyauth.Au
 				}
 				// rateLimitActionMaxExceeded - fall through to error
 			}
-			err = newCategorizedError(httpResp.StatusCode, string(bodyBytes), nil)
+			retryAfter := ParseQuotaRetryDelay(bodyBytes)
+			err = newCategorizedError(httpResp.StatusCode, string(bodyBytes), retryAfter)
 			return resp, err
 		}
 
@@ -170,7 +171,8 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, auth *cliproxyauth.Au
 
 	switch {
 	case lastStatus != 0:
-		err = newCategorizedError(lastStatus, string(lastBody), nil)
+		retryAfter := ParseQuotaRetryDelay(lastBody)
+		err = newCategorizedError(lastStatus, string(lastBody), retryAfter)
 	case lastErr != nil:
 		err = lastErr
 	default:
@@ -271,7 +273,8 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 				log.Debugf("antigravity executor: error %d on base url %s, retrying with fallback base url: %s", httpResp.StatusCode, baseURL, baseURLs[idx+1])
 				continue
 			}
-			err = newCategorizedError(httpResp.StatusCode, string(bodyBytes), nil)
+			retryAfter := ParseQuotaRetryDelay(bodyBytes)
+			err = newCategorizedError(httpResp.StatusCode, string(bodyBytes), retryAfter)
 			return nil, err
 		}
 
@@ -356,7 +359,8 @@ func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *cliproxya
 
 	switch {
 	case lastStatus != 0:
-		err = newCategorizedError(lastStatus, string(lastBody), nil)
+		retryAfter := ParseQuotaRetryDelay(lastBody)
+		err = newCategorizedError(lastStatus, string(lastBody), retryAfter)
 	case lastErr != nil:
 		err = lastErr
 	default:

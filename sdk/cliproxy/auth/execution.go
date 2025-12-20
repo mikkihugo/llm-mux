@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	cliproxyexecutor "github.com/nghyane/llm-mux/sdk/cliproxy/executor"
 	"github.com/nghyane/llm-mux/internal/registry"
+	cliproxyexecutor "github.com/nghyane/llm-mux/sdk/cliproxy/executor"
 )
 
 // ExecuteWithProvider handles non-streaming execution for a single provider, attempting
@@ -165,7 +165,10 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 						if errors.As(chunk.Err, &se) && se != nil {
 							rerr.HTTPStatus = se.StatusCode()
 						}
-						m.MarkResult(streamCtx, Result{AuthID: streamAuth.ID, Provider: streamProvider, Model: req.Model, Success: false, Error: rerr})
+						result := Result{AuthID: streamAuth.ID, Provider: streamProvider, Model: req.Model, Success: false, Error: rerr}
+						// Extract RetryAfter from mid-stream errors for proper quota blocking
+						result.RetryAfter = retryAfterFromError(chunk.Err)
+						m.MarkResult(streamCtx, result)
 					}
 					// Non-blocking send with context check
 					select {

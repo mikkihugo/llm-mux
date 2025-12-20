@@ -92,7 +92,7 @@ func parseRetryDelay(errorBody []byte) (*time.Duration, error) {
 	// Try multiple paths to handle different response formats
 	paths := []string{
 		"error.details",   // Standard: {"error": {"details": [...]}}
-		"0.error.details", // Array wrapped: [{"error": {"details": [...]}}]
+		"0.error.details", // Array wrapped: [{"error": {"details": [...]}]
 	}
 
 	var details gjson.Result
@@ -123,4 +123,60 @@ func parseRetryDelay(errorBody []byte) (*time.Duration, error) {
 	}
 
 	return nil, fmt.Errorf("no RetryInfo found")
+}
+
+// ParseQuotaRetryDelay extracts the full quota reset delay from a Google API 429 error response.
+// Unlike parseRetryDelay which is used for short-term retries (capped at 20s), this function
+// returns the actual quota reset time which can be hours.
+//
+// It checks multiple sources in order of preference:
+//  1. RetryInfo.retryDelay (e.g., "7118.204539195s") - most accurate
+//  2. ErrorInfo.metadata.quotaResetDelay (e.g., "1h58m38.204539195s") - human-readable format
+//
+// Returns nil if no quota delay information is found.
+func ParseQuotaRetryDelay(errorBody []byte) *time.Duration {
+	paths := []string{
+		"error.details",
+		"0.error.details",
+	}
+
+	var details gjson.Result
+	for _, path := range paths {
+		details = gjson.GetBytes(errorBody, path)
+		if details.Exists() && details.IsArray() {
+			break
+		}
+	}
+
+	if !details.Exists() || !details.IsArray() {
+		return nil
+	}
+
+	var quotaResetDelay *time.Duration
+
+	for _, detail := range details.Array() {
+		typeVal := detail.Get("@type").String()
+
+		// Prefer RetryInfo.retryDelay (more precise, in seconds)
+		if typeVal == "type.googleapis.com/google.rpc.RetryInfo" {
+			retryDelay := detail.Get("retryDelay").String()
+			if retryDelay != "" {
+				if duration, err := time.ParseDuration(retryDelay); err == nil && duration > 0 {
+					return &duration
+				}
+			}
+		}
+
+		// Fallback to ErrorInfo.metadata.quotaResetDelay
+		if typeVal == "type.googleapis.com/google.rpc.ErrorInfo" {
+			quotaDelay := detail.Get("metadata.quotaResetDelay").String()
+			if quotaDelay != "" {
+				if duration, err := time.ParseDuration(quotaDelay); err == nil && duration > 0 {
+					quotaResetDelay = &duration
+				}
+			}
+		}
+	}
+
+	return quotaResetDelay
 }

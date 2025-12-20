@@ -103,7 +103,11 @@ func NewVirtualCredential(projectID string, parent *SharedCredential) *VirtualCr
 }
 
 // ResolveSharedCredential returns the shared credential backing the provided runtime payload.
+// It handles unwrapping of AuthRuntimeData from quota group tracking.
 func ResolveSharedCredential(runtime any) *SharedCredential {
+	// Unwrap AuthRuntimeData if present (from quota group tracking)
+	runtime = unwrapRuntimeData(runtime)
+
 	switch typed := runtime.(type) {
 	case *SharedCredential:
 		return typed
@@ -115,12 +119,35 @@ func ResolveSharedCredential(runtime any) *SharedCredential {
 }
 
 // IsVirtual reports whether the runtime payload represents a virtual credential.
+// It handles unwrapping of AuthRuntimeData from quota group tracking.
 func IsVirtual(runtime any) bool {
 	if runtime == nil {
 		return false
 	}
+	// Unwrap AuthRuntimeData if present
+	runtime = unwrapRuntimeData(runtime)
+
 	_, ok := runtime.(*VirtualCredential)
 	return ok
+}
+
+// unwrapRuntimeData extracts the original provider data from AuthRuntimeData
+// if the runtime has been wrapped by quota group tracking.
+func unwrapRuntimeData(runtime any) any {
+	if runtime == nil {
+		return nil
+	}
+	// Use type assertion with interface to avoid import cycle
+	// AuthRuntimeData has ProviderData field
+	type providerDataProvider interface {
+		GetProviderData() any
+	}
+	if pdp, ok := runtime.(providerDataProvider); ok {
+		if data := pdp.GetProviderData(); data != nil {
+			return data
+		}
+	}
+	return runtime
 }
 
 func cloneMap(in map[string]any) map[string]any {

@@ -98,8 +98,9 @@ func AntigravityQuotaGroupResolver(provider, model string) string {
 
 // quotaGroupIndex maintains a reverse index from quota group to blocked state.
 // This enables O(1) lookup instead of O(N) iteration over ModelStates.
+// All operations are protected by a mutex for thread-safety.
 type quotaGroupIndex struct {
-	// blockedGroups maps quota group name to its blocked state
+	mu            sync.RWMutex
 	blockedGroups map[string]*quotaGroupState
 }
 
@@ -112,27 +113,60 @@ type quotaGroupState struct {
 	SourceModel string
 }
 
+// AuthRuntimeData is a composite struct that holds both quota group index
+// and any original provider-specific runtime data (e.g., gemini-cli credentials).
+// This prevents overwriting existing Runtime data when adding quota tracking.
+// Exported so that providers can unwrap their original runtime data.
+type AuthRuntimeData struct {
+	QuotaIndex   *quotaGroupIndex
+	ProviderData any
+}
+
+// GetProviderData returns the original provider-specific runtime data.
+// This method allows providers to unwrap their data without direct type assertion.
+func (rd *AuthRuntimeData) GetProviderData() any {
+	if rd == nil {
+		return nil
+	}
+	return rd.ProviderData
+}
+
 // getOrCreateQuotaGroupIndex returns the quota group index from auth.Runtime,
-// creating it if necessary.
+// creating it if necessary. This function is thread-safe and preserves
+// any existing provider-specific runtime data.
 func getOrCreateQuotaGroupIndex(auth *Auth) *quotaGroupIndex {
 	if auth == nil {
 		return nil
 	}
+
+	// Case 1: No runtime data yet
 	if auth.Runtime == nil {
 		idx := &quotaGroupIndex{
 			blockedGroups: make(map[string]*quotaGroupState),
 		}
-		auth.Runtime = idx
+		auth.Runtime = &AuthRuntimeData{QuotaIndex: idx}
 		return idx
 	}
-	if idx, ok := auth.Runtime.(*quotaGroupIndex); ok {
-		return idx
+
+	// Case 2: Already using AuthRuntimeData
+	if rd, ok := auth.Runtime.(*AuthRuntimeData); ok {
+		if rd.QuotaIndex == nil {
+			rd.QuotaIndex = &quotaGroupIndex{
+				blockedGroups: make(map[string]*quotaGroupState),
+			}
+		}
+		return rd.QuotaIndex
 	}
-	// Runtime is used for something else, create wrapper
+
+	// Case 3: Runtime is used by provider (e.g., gemini-cli credentials)
+	// Wrap it in AuthRuntimeData to preserve the original data
 	idx := &quotaGroupIndex{
 		blockedGroups: make(map[string]*quotaGroupState),
 	}
-	auth.Runtime = idx
+	auth.Runtime = &AuthRuntimeData{
+		QuotaIndex:   idx,
+		ProviderData: auth.Runtime, // Preserve original
+	}
 	return idx
 }
 
@@ -141,15 +175,51 @@ func getQuotaGroupIndex(auth *Auth) *quotaGroupIndex {
 	if auth == nil || auth.Runtime == nil {
 		return nil
 	}
-	idx, _ := auth.Runtime.(*quotaGroupIndex)
-	return idx
+
+	// Check for direct quotaGroupIndex (legacy, shouldn't happen with new code)
+	if idx, ok := auth.Runtime.(*quotaGroupIndex); ok {
+		return idx
+	}
+
+	// Check for wrapped AuthRuntimeData
+	if rd, ok := auth.Runtime.(*AuthRuntimeData); ok {
+		return rd.QuotaIndex
+	}
+
+	return nil
+}
+
+// GetProviderRuntimeData extracts the original provider-specific runtime data
+// from auth.Runtime, unwrapping AuthRuntimeData if necessary.
+// This allows providers like gemini-cli to access their credentials.
+func GetProviderRuntimeData(auth *Auth) any {
+	if auth == nil || auth.Runtime == nil {
+		return nil
+	}
+
+	// If wrapped in AuthRuntimeData, return the original provider data
+	if rd, ok := auth.Runtime.(*AuthRuntimeData); ok {
+		return rd.ProviderData
+	}
+
+	// If it's a quotaGroupIndex, there's no provider data
+	if _, ok := auth.Runtime.(*quotaGroupIndex); ok {
+		return nil
+	}
+
+	// Otherwise, return as-is (raw provider data, not yet wrapped)
+	return auth.Runtime
 }
 
 // setGroupBlocked marks a quota group as blocked.
+// Thread-safe.
 func (idx *quotaGroupIndex) setGroupBlocked(group, sourceModel string, nextRetry, nextRecover time.Time) {
 	if idx == nil || group == "" {
 		return
 	}
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
 	if idx.blockedGroups == nil {
 		idx.blockedGroups = make(map[string]*quotaGroupState)
 	}
@@ -161,8 +231,15 @@ func (idx *quotaGroupIndex) setGroupBlocked(group, sourceModel string, nextRetry
 }
 
 // clearGroup removes a quota group from blocked state.
+// Thread-safe.
 func (idx *quotaGroupIndex) clearGroup(group string) {
-	if idx == nil || idx.blockedGroups == nil {
+	if idx == nil {
+		return
+	}
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.blockedGroups == nil {
 		return
 	}
 	delete(idx.blockedGroups, group)
@@ -170,24 +247,42 @@ func (idx *quotaGroupIndex) clearGroup(group string) {
 
 // isGroupBlocked checks if a quota group is blocked.
 // Returns (blocked, nextRetryAfter) - O(1) lookup.
+// Thread-safe. Performs lazy cleanup of expired entries.
 func (idx *quotaGroupIndex) isGroupBlocked(group string, now time.Time) (bool, time.Time) {
-	if idx == nil || idx.blockedGroups == nil || group == "" {
+	if idx == nil || group == "" {
+		return false, time.Time{}
+	}
+
+	idx.mu.RLock()
+	if idx.blockedGroups == nil {
+		idx.mu.RUnlock()
 		return false, time.Time{}
 	}
 	state, ok := idx.blockedGroups[group]
 	if !ok || state == nil {
+		idx.mu.RUnlock()
 		return false, time.Time{}
 	}
+
 	// Check if still blocked
 	if state.NextRetryAfter.After(now) {
 		next := state.NextRetryAfter
 		if !state.NextRecoverAt.IsZero() && state.NextRecoverAt.After(now) && state.NextRecoverAt.After(next) {
 			next = state.NextRecoverAt
 		}
+		idx.mu.RUnlock()
 		return true, next
 	}
-	// Expired, clean up
-	delete(idx.blockedGroups, group)
+	idx.mu.RUnlock()
+
+	// Expired, clean up (upgrade to write lock)
+	idx.mu.Lock()
+	// Double-check after acquiring write lock
+	if state, ok := idx.blockedGroups[group]; ok && state != nil && !state.NextRetryAfter.After(now) {
+		delete(idx.blockedGroups, group)
+	}
+	idx.mu.Unlock()
+
 	return false, time.Time{}
 }
 
