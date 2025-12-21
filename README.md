@@ -1,5 +1,6 @@
 # llm-mux
 
+[![GitHub stars](https://img.shields.io/github/stars/nghyane/llm-mux?style=social)](https://github.com/nghyane/llm-mux)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://github.com/nghyane/llm-mux)
 [![Go Version](https://img.shields.io/badge/go-1.24-cyan)](https://golang.org)
