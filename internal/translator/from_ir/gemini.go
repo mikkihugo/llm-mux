@@ -18,6 +18,17 @@ import (
 
 var debugToolCalls = os.Getenv("DEBUG_TOOL_CALLS") == "1"
 
+const (
+	// DefaultThinkingBudgetTokens is the default thinking budget for Gemini models (tokens)
+	DefaultThinkingBudgetTokens = 16000
+
+	// GeminiSafeMaxTokens is the safe maximum tokens for Gemini models
+	GeminiSafeMaxTokens = 32000
+
+	// DefaultMaxOutputTokens is the default max output tokens when not specified
+	DefaultMaxOutputTokens = 8192
+)
+
 // GeminiProvider handles conversion to Gemini AI Studio API format.
 type GeminiProvider struct{}
 
@@ -99,7 +110,7 @@ func (p *GeminiProvider) applyGenerationConfig(root map[string]any, req *ir.Unif
 	// Determine effective thinking config (handling auto-apply)
 	// 3. Thinking Config Handling
 	// Default values
-	defaultThinkingBudget := 16000
+	defaultThinkingBudget := DefaultThinkingBudgetTokens
 	if isClaude {
 		// Ensure default budget for Claude if not set
 		if req.Thinking != nil && req.Thinking.ThinkingBudget == nil {
@@ -195,7 +206,7 @@ func (p *GeminiProvider) applyGenerationConfig(root map[string]any, req *ir.Unif
 				currentMax = *req.MaxTokens
 			}
 
-			safeMax := 32000
+			safeMax := GeminiSafeMaxTokens
 			budgetInt := int(b)
 			newMax := max(currentMax, budgetInt*2, safeMax)
 			if newMax > currentMax {
@@ -256,7 +267,7 @@ func (p *GeminiProvider) applyGenerationConfig(root map[string]any, req *ir.Unif
 
 	if currentMax < 1 {
 		// Default to 8192 if not provided (Safe for Claude Sonnet/Opus)
-		genConfig["maxOutputTokens"] = 8192
+		genConfig["maxOutputTokens"] = DefaultMaxOutputTokens
 	}
 
 	if len(genConfig) > 0 {
