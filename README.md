@@ -5,8 +5,9 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://github.com/nghyane/llm-mux)
 
 **Turn your existing AI subscriptions into standard API endpoints.**  
-A local gateway that allows you to use your Claude Pro, GitHub Copilot, and Google Gemini subscriptions with any OpenAI-compatible tool (Cursor, VS Code, Aider, etc.).
+A local gateway that enables your Claude Pro, GitHub Copilot, and Google Gemini subscriptions to work with **any** AI tool.
 
+> **Universal Compatibility:** Supports OpenAI, Anthropic (Claude), Google (Gemini), and Ollama API formats.
 > **Zero Overhead:** No separate API billing. No per-token charges. Runs locally.
 
 ---
@@ -126,15 +127,47 @@ llm-mux automatically maps your subscription access to these model identifiers.
 
 ## 🧩 Architecture
 
-llm-mux acts as a translation layer (Intermediate Representation), converting OpenAI-format requests into the specific proprietary protocols of your subscriptions.
+llm-mux acts as a universal adapter, accepting requests in multiple formats (OpenAI, Claude, Gemini, Ollama) and routing them to your active subscriptions.
 
 ```mermaid
 graph LR
-    User[Your Tools] -->|OpenAI Protocol| Mux[llm-mux :8318]
-    Mux -->|OAuth| Gemini[Google Gemini]
-    Mux -->|OAuth| Claude[Claude Pro]
-    Mux -->|OAuth| Copilot[GitHub Copilot]
+    subgraph "Inbound Protocols"
+        OpenAI[OpenAI / Compatible]
+        Anthropic[Anthropic SDK]
+        Google[Google AI SDK]
+        Ollama[Ollama Clients]
+    end
+
+    Mux[llm-mux :8318]
+    
+    subgraph "Outbound Subscriptions"
+        Gemini[Google Gemini]
+        Claude[Claude Pro]
+        Copilot[GitHub Copilot]
+    end
+
+    OpenAI --> Mux
+    Anthropic --> Mux
+    Google --> Mux
+    Ollama --> Mux
+
+    Mux -->|Translation Layer| Gemini
+    Mux -->|Translation Layer| Claude
+    Mux -->|Translation Layer| Copilot
 ```
+
+---
+
+## 🔌 Supported API Protocols
+
+You can use `llm-mux` as a drop-in replacement for these providers without changing your client code structure.
+
+| Protocol | Endpoint | Use Case |
+|:---|:---|:---|
+| **OpenAI** | `POST /v1/chat/completions` | Cursor, VS Code, LangChain |
+| **Anthropic** | `POST /v1/messages` | Native Anthropic SDKs, Claude-native tools |
+| **Gemini** | `POST /v1beta/models/...` | Google AI Studio tools, Vertex AI SDKs |
+| **Ollama** | `POST /api/chat` | WebUIs built for Ollama |
 
 ---
 
