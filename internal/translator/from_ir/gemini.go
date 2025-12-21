@@ -947,7 +947,6 @@ func ToGeminiChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 	return append(jsonBytes, '\n'), nil
 }
 
-// buildGroundingMetadataMap converts GroundingMetadata to a map for JSON output.
 func buildGroundingMetadataMap(gm *ir.GroundingMetadata) map[string]any {
 	if gm == nil {
 		return nil
@@ -1047,14 +1046,12 @@ func (p *GeminiCLIProvider) ParseResponse(responseJSON []byte) ([]ir.Message, *i
 	return messages, usage, err
 }
 
-// ParseStreamChunk parses a streaming Gemini CLI chunk into events.
 // Delegates to to_ir package as the logic is identical to Gemini AI Studio chunk parsing.
 func (p *GeminiCLIProvider) ParseStreamChunk(chunkJSON []byte) ([]ir.UnifiedEvent, error) {
 	return to_ir.ParseGeminiChunk(chunkJSON)
 }
 
-// ParseStreamChunkWithContext parses a streaming Gemini CLI chunk with schema context.
-// The schemaCtx parameter allows normalizing tool call parameters based on the original request schema.
+// Delegates to to_ir package as the logic is identical to Gemini AI Studio chunk parsing.
 func (p *GeminiCLIProvider) ParseStreamChunkWithContext(chunkJSON []byte, schemaCtx *ir.ToolSchemaContext) ([]ir.UnifiedEvent, error) {
 	return to_ir.ParseGeminiChunkWithContext(chunkJSON, schemaCtx)
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// ParseClaudeRequest converts a raw Claude Messages API JSON body into unified format.
 func ParseClaudeRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 	// URL format fix: remove "format":"uri" which causes issues with some backends
 	rawJSON = bytes.Replace(rawJSON, []byte(`"url":{"type":"string","format":"uri",`), []byte(`"url":{"type":"string",`), -1)
@@ -431,7 +430,6 @@ func parseClaudeMessage(m gjson.Result) ir.Message {
 	return msg
 }
 
-// ParseClaudeResponse converts a non-streaming Claude API response into unified format.
 func ParseClaudeResponse(rawJSON []byte) ([]ir.Message, *ir.Usage, error) {
 	if err := ir.ValidateJSON(rawJSON); err != nil {
 		return nil, nil, err
@@ -460,7 +458,6 @@ func ParseClaudeResponse(rawJSON []byte) ([]ir.Message, *ir.Usage, error) {
 	return nil, usage, nil
 }
 
-// ParseClaudeChunk converts a streaming Claude API chunk into events.
 func ParseClaudeChunk(rawJSON []byte) ([]ir.UnifiedEvent, error) {
 	data := ir.ExtractSSEData(rawJSON)
 	if len(data) == 0 {

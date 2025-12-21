@@ -44,7 +44,6 @@ func NewClaudeStreamState() *ClaudeStreamState {
 	return &ClaudeStreamState{TextBlockIndex: 0}
 }
 
-// ConvertRequest transforms unified request into Claude Messages API JSON.
 func (p *ClaudeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 	if claudeAccount == "" {
 		u, _ := uuid.NewRandom()
@@ -349,7 +348,6 @@ func (p *ClaudeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, err
 	return json.Marshal(root)
 }
 
-// ParseResponse parses non-streaming Claude response into unified format.
 func (p *ClaudeProvider) ParseResponse(responseJSON []byte) ([]ir.Message, *ir.Usage, error) {
 	if err := ir.ValidateJSON(responseJSON); err != nil {
 		return nil, nil, err
@@ -373,12 +371,10 @@ func (p *ClaudeProvider) ParseResponse(responseJSON []byte) ([]ir.Message, *ir.U
 	return []ir.Message{msg}, usage, nil
 }
 
-// ParseStreamChunk parses streaming Claude SSE chunk into events.
 func (p *ClaudeProvider) ParseStreamChunk(chunkJSON []byte) ([]ir.UnifiedEvent, error) {
 	return p.ParseStreamChunkWithState(chunkJSON, nil)
 }
 
-// ParseStreamChunkWithState parses streaming Claude SSE chunk with state tracking.
 func (p *ClaudeProvider) ParseStreamChunkWithState(chunkJSON []byte, state *ir.ClaudeStreamParserState) ([]ir.UnifiedEvent, error) {
 	data := ir.ExtractSSEData(chunkJSON)
 	if len(data) == 0 {

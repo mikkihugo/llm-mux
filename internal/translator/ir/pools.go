@@ -13,7 +13,6 @@ var BytesBufferPool = sync.Pool{
 	},
 }
 
-// GetBuffer retrieves a buffer from the pool.
 func GetBuffer() *bytes.Buffer {
 	return BytesBufferPool.Get().(*bytes.Buffer)
 }
@@ -33,7 +32,6 @@ var StringBuilderPool = sync.Pool{
 	},
 }
 
-// GetStringBuilder retrieves a string builder from the pool.
 func GetStringBuilder() *strings.Builder {
 	return StringBuilderPool.Get().(*strings.Builder)
 }
@@ -56,7 +54,6 @@ var uuidBytePool = sync.Pool{
 	},
 }
 
-// GetUUIDBuf retrieves a 16-byte buffer for UUID generation.
 func GetUUIDBuf() *[]byte {
 	return uuidBytePool.Get().(*[]byte)
 }
@@ -112,7 +109,6 @@ var sseChunkPool = sync.Pool{
 	},
 }
 
-// GetSSEChunkBuf retrieves a buffer for SSE chunk building.
 func GetSSEChunkBuf() []byte {
 	bp := sseChunkPool.Get().(*[]byte)
 	return (*bp)[:0]
@@ -126,8 +122,6 @@ func PutSSEChunkBuf(b []byte) {
 	}
 }
 
-// BuildSSEChunk builds an SSE chunk with "data: " prefix efficiently.
-// Returns a pooled buffer - caller should call PutSSEChunkBuf when done.
 func BuildSSEChunk(jsonData []byte) []byte {
 	size := 6 + len(jsonData) + 2 // "data: " + json + "\n\n"
 	buf := GetSSEChunkBuf()
@@ -140,8 +134,6 @@ func BuildSSEChunk(jsonData []byte) []byte {
 	return buf
 }
 
-// BuildSSEEvent builds an SSE event with event type and data.
-// Format: "event: <type>\ndata: <json>\n\n"
 func BuildSSEEvent(eventType string, jsonData []byte) []byte {
 	size := 7 + len(eventType) + 7 + len(jsonData) + 2
 	buf := GetSSEChunkBuf()
