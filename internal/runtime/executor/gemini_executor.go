@@ -71,13 +71,7 @@ func (e *GeminiExecutor) PrepareRequest(_ *http.Request, _ *cliproxyauth.Auth) e
 //   - cliproxyexecutor.Response: The response from the API
 //   - error: An error if the request fails
 func (e *GeminiExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (resp cliproxyexecutor.Response, err error) {
-	// Extract credentials for Gemini API
-	var apiKey, bearer string
-	if auth != nil && auth.Attributes != nil {
-		apiKey = auth.Attributes["api_key"]
-	}
-	token, _ := ExtractCreds(auth, GeminiCredsConfig)
-	bearer = token
+	apiKey, bearer := geminiCreds(auth)
 
 	reporter := newUsageReporter(ctx, e.Identifier(), req.Model, auth)
 	defer reporter.trackFailure(ctx, &err)
@@ -159,13 +153,7 @@ func (e *GeminiExecutor) Execute(ctx context.Context, auth *cliproxyauth.Auth, r
 }
 
 func (e *GeminiExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (stream <-chan cliproxyexecutor.StreamChunk, err error) {
-	// Extract credentials for Gemini API
-	var apiKey, bearer string
-	if auth != nil && auth.Attributes != nil {
-		apiKey = auth.Attributes["api_key"]
-	}
-	token, _ := ExtractCreds(auth, GeminiCredsConfig)
-	bearer = token
+	apiKey, bearer := geminiCreds(auth)
 
 	reporter := newUsageReporter(ctx, e.Identifier(), req.Model, auth)
 	defer reporter.trackFailure(ctx, &err)
@@ -293,13 +281,7 @@ func (e *GeminiExecutor) ExecuteStream(ctx context.Context, auth *cliproxyauth.A
 }
 
 func (e *GeminiExecutor) CountTokens(ctx context.Context, auth *cliproxyauth.Auth, req cliproxyexecutor.Request, opts cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {
-	// Extract credentials for Gemini API
-	var apiKey, bearer string
-	if auth != nil && auth.Attributes != nil {
-		apiKey = auth.Attributes["api_key"]
-	}
-	token, _ := ExtractCreds(auth, GeminiCredsConfig)
-	bearer = token
+	apiKey, bearer := geminiCreds(auth)
 
 	from := opts.SourceFormat
 	translatedReq, err := TranslateToGemini(e.cfg, from, req.Model, bytes.Clone(req.Payload), false, req.Metadata)
@@ -458,6 +440,19 @@ func (e *GeminiExecutor) Refresh(ctx context.Context, auth *cliproxyauth.Auth) (
 		auth.Metadata["access_token"] = newTok.AccessToken
 	}
 	return auth, nil
+}
+
+// geminiCreds extracts credentials for Gemini API.
+// Returns (apiKey, bearer) for compatibility with existing Gemini executor logic.
+// Delegates to the common ExtractCreds function with Gemini configuration.
+func geminiCreds(a *cliproxyauth.Auth) (apiKey, bearer string) {
+	token, _ := ExtractCreds(a, GeminiCredsConfig)
+	// For Gemini, the extracted token becomes the bearer, and apiKey comes from attributes
+	if a != nil && a.Attributes != nil {
+		apiKey = a.Attributes["api_key"]
+	}
+	bearer = token
+	return
 }
 
 func resolveGeminiBaseURL(auth *cliproxyauth.Auth) string {
