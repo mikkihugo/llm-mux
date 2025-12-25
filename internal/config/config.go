@@ -36,17 +36,11 @@ type Config struct {
 	WebsocketAuth bool `yaml:"ws-auth" json:"ws-auth"`
 	DisableAuth   bool `yaml:"disable-auth" json:"disable-auth"`
 
-	// Providers is the new unified provider configuration.
-	// This replaces the legacy gemini-api-key, claude-api-key, codex-api-key,
-	// openai-compatibility, and vertex-api-key configurations.
+	// Providers is the unified provider configuration.
 	Providers []Provider `yaml:"providers,omitempty" json:"providers,omitempty"`
 
-	// Legacy provider configurations (deprecated, use Providers instead)
-	GeminiKey           []GeminiKey           `yaml:"gemini-api-key,omitempty" json:"gemini-api-key,omitempty"`
-	CodexKey            []CodexKey            `yaml:"codex-api-key,omitempty" json:"codex-api-key,omitempty"`
-	ClaudeKey           []ClaudeKey           `yaml:"claude-api-key,omitempty" json:"claude-api-key,omitempty"`
-	OpenAICompatibility []OpenAICompatibility `yaml:"openai-compatibility,omitempty" json:"openai-compatibility,omitempty"`
-	VertexCompatAPIKey  []VertexCompatKey     `yaml:"vertex-api-key,omitempty" json:"vertex-api-key,omitempty"`
+	// VertexCompatAPIKey is the configuration for Vertex AI-compatible API keys.
+	VertexCompatAPIKey []VertexCompatKey `yaml:"vertex-api-key,omitempty" json:"vertex-api-key,omitempty"`
 
 	AmpCode             AmpCode             `yaml:"ampcode" json:"ampcode"`
 	OAuthExcludedModels map[string][]string `yaml:"oauth-excluded-models,omitempty" json:"oauth-excluded-models,omitempty"`
@@ -130,61 +124,6 @@ type PayloadModelRule struct {
 	Protocol string `yaml:"protocol" json:"protocol"`
 }
 
-// ClaudeKey represents the configuration for a Claude API key.
-type ClaudeKey struct {
-	APIKey         string            `yaml:"api-key" json:"api-key"`
-	BaseURL        string            `yaml:"base-url" json:"base-url"`
-	ProxyURL       string            `yaml:"proxy-url" json:"proxy-url"`
-	Models         []ClaudeModel     `yaml:"models" json:"models"`
-	Headers        map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-	ExcludedModels []string          `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
-}
-
-// ClaudeModel describes a mapping between an alias and the actual upstream model name.
-type ClaudeModel struct {
-	Name  string `yaml:"name" json:"name"`
-	Alias string `yaml:"alias" json:"alias"`
-}
-
-// CodexKey represents the configuration for a Codex API key.
-type CodexKey struct {
-	APIKey         string            `yaml:"api-key" json:"api-key"`
-	BaseURL        string            `yaml:"base-url" json:"base-url"`
-	ProxyURL       string            `yaml:"proxy-url" json:"proxy-url"`
-	Headers        map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-	ExcludedModels []string          `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
-}
-
-// GeminiKey represents the configuration for a Gemini API key.
-type GeminiKey struct {
-	APIKey         string            `yaml:"api-key" json:"api-key"`
-	BaseURL        string            `yaml:"base-url,omitempty" json:"base-url,omitempty"`
-	ProxyURL       string            `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`
-	Headers        map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-	ExcludedModels []string          `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
-}
-
-// OpenAICompatibility represents the configuration for OpenAI API compatibility with external providers.
-type OpenAICompatibility struct {
-	Name          string                      `yaml:"name" json:"name"`
-	BaseURL       string                      `yaml:"base-url" json:"base-url"`
-	APIKeyEntries []OpenAICompatibilityAPIKey `yaml:"api-key-entries,omitempty" json:"api-key-entries,omitempty"`
-	Models        []OpenAICompatibilityModel  `yaml:"models" json:"models"`
-	Headers       map[string]string           `yaml:"headers,omitempty" json:"headers,omitempty"`
-}
-
-// OpenAICompatibilityAPIKey represents an API key configuration with optional proxy setting.
-type OpenAICompatibilityAPIKey struct {
-	APIKey   string `yaml:"api-key" json:"api-key"`
-	ProxyURL string `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`
-}
-
-// OpenAICompatibilityModel represents a model configuration for OpenAI compatibility.
-type OpenAICompatibilityModel struct {
-	Name  string `yaml:"name" json:"name"`
-	Alias string `yaml:"alias" json:"alias"`
-}
-
 // NewDefaultConfig creates a new Config with sensible defaults.
 // This allows the server to run without a config file using OAuth credentials only.
 func NewDefaultConfig() *Config {
@@ -265,110 +204,16 @@ func LoadConfigOptional(configFile string, optional bool) (*Config, error) {
 	// Sync request authentication providers with inline API keys for backwards compatibility.
 	syncInlineAccessProvider(&cfg)
 
-	// Sanitize Gemini API key configuration.
-	cfg.SanitizeGeminiKeys()
-
 	// Sanitize Vertex-compatible API keys: drop entries without base-url
 	cfg.SanitizeVertexCompatKeys()
 
-	// Sanitize Codex keys: drop entries without base-url
-	cfg.SanitizeCodexKeys()
-
-	// Sanitize Claude key headers
-	cfg.SanitizeClaudeKeys()
-
-	// Sanitize OpenAI compatibility providers: drop entries without base-url
-	cfg.SanitizeOpenAICompatibility()
-
-	// Migrate legacy configs to unified Providers format
-	cfg.MigrateLegacyProviders()
+	cfg.Providers = SanitizeProviders(cfg.Providers)
 
 	// Normalize OAuth provider model exclusion map.
 	cfg.OAuthExcludedModels = NormalizeOAuthExcludedModels(cfg.OAuthExcludedModels)
 
 	// Return the populated configuration struct.
 	return &cfg, nil
-}
-
-// SanitizeOpenAICompatibility removes OpenAI-compatibility provider entries that are
-// not actionable, specifically those missing a BaseURL. It trims whitespace before
-// evaluation and preserves the relative order of remaining entries.
-func (cfg *Config) SanitizeOpenAICompatibility() {
-	if cfg == nil || len(cfg.OpenAICompatibility) == 0 {
-		return
-	}
-	out := make([]OpenAICompatibility, 0, len(cfg.OpenAICompatibility))
-	for i := range cfg.OpenAICompatibility {
-		e := cfg.OpenAICompatibility[i]
-		e.Name = strings.TrimSpace(e.Name)
-		e.BaseURL = strings.TrimSpace(e.BaseURL)
-		e.Headers = NormalizeHeaders(e.Headers)
-		if e.BaseURL == "" {
-			// Skip providers with no base-url; treated as removed
-			continue
-		}
-		out = append(out, e)
-	}
-	cfg.OpenAICompatibility = out
-}
-
-// SanitizeCodexKeys removes Codex API key entries missing a BaseURL.
-// It trims whitespace and preserves order for remaining entries.
-func (cfg *Config) SanitizeCodexKeys() {
-	if cfg == nil || len(cfg.CodexKey) == 0 {
-		return
-	}
-	out := make([]CodexKey, 0, len(cfg.CodexKey))
-	for i := range cfg.CodexKey {
-		e := cfg.CodexKey[i]
-		e.BaseURL = strings.TrimSpace(e.BaseURL)
-		e.Headers = NormalizeHeaders(e.Headers)
-		e.ExcludedModels = NormalizeExcludedModels(e.ExcludedModels)
-		if e.BaseURL == "" {
-			continue
-		}
-		out = append(out, e)
-	}
-	cfg.CodexKey = out
-}
-
-// SanitizeClaudeKeys normalizes headers for Claude credentials.
-func (cfg *Config) SanitizeClaudeKeys() {
-	if cfg == nil || len(cfg.ClaudeKey) == 0 {
-		return
-	}
-	for i := range cfg.ClaudeKey {
-		entry := &cfg.ClaudeKey[i]
-		entry.Headers = NormalizeHeaders(entry.Headers)
-		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
-	}
-}
-
-// SanitizeGeminiKeys deduplicates and normalizes Gemini credentials.
-func (cfg *Config) SanitizeGeminiKeys() {
-	if cfg == nil {
-		return
-	}
-
-	seen := make(map[string]struct{}, len(cfg.GeminiKey))
-	out := cfg.GeminiKey[:0]
-	for i := range cfg.GeminiKey {
-		entry := cfg.GeminiKey[i]
-		entry.APIKey = strings.TrimSpace(entry.APIKey)
-		if entry.APIKey == "" {
-			continue
-		}
-		entry.BaseURL = strings.TrimSpace(entry.BaseURL)
-		entry.ProxyURL = strings.TrimSpace(entry.ProxyURL)
-		entry.Headers = NormalizeHeaders(entry.Headers)
-		entry.ExcludedModels = NormalizeExcludedModels(entry.ExcludedModels)
-		if _, exists := seen[entry.APIKey]; exists {
-			continue
-		}
-		seen[entry.APIKey] = struct{}{}
-		out = append(out, entry)
-	}
-	cfg.GeminiKey = out
 }
 
 func syncInlineAccessProvider(cfg *Config) {

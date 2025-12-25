@@ -499,7 +499,7 @@ func (e *ClaudeExecutor) resolveUpstreamModel(alias string, auth *cliproxyauth.A
 	return ""
 }
 
-func (e *ClaudeExecutor) resolveClaudeConfig(auth *cliproxyauth.Auth) *config.ClaudeKey {
+func (e *ClaudeExecutor) resolveClaudeConfig(auth *cliproxyauth.Auth) *config.Provider {
 	if auth == nil || e.cfg == nil {
 		return nil
 	}
@@ -508,30 +508,42 @@ func (e *ClaudeExecutor) resolveClaudeConfig(auth *cliproxyauth.Auth) *config.Cl
 		attrKey = strings.TrimSpace(auth.Attributes["api_key"])
 		attrBase = strings.TrimSpace(auth.Attributes["base_url"])
 	}
-	for i := range e.cfg.ClaudeKey {
-		entry := &e.cfg.ClaudeKey[i]
-		cfgKey := strings.TrimSpace(entry.APIKey)
-		cfgBase := strings.TrimSpace(entry.BaseURL)
-		if attrKey != "" && attrBase != "" {
-			if strings.EqualFold(cfgKey, attrKey) && strings.EqualFold(cfgBase, attrBase) {
-				return entry
-			}
+	for i := range e.cfg.Providers {
+		p := &e.cfg.Providers[i]
+		if p.Type != config.ProviderTypeAnthropic {
 			continue
 		}
-		if attrKey != "" && strings.EqualFold(cfgKey, attrKey) {
-			if cfgBase == "" || strings.EqualFold(cfgBase, attrBase) {
-				return entry
+		cfgBase := strings.TrimSpace(p.BaseURL)
+		apiKeys := p.GetAPIKeys()
+		for _, apiKeyEntry := range apiKeys {
+			cfgKey := strings.TrimSpace(apiKeyEntry.Key)
+			if attrKey != "" && attrBase != "" {
+				if strings.EqualFold(cfgKey, attrKey) && strings.EqualFold(cfgBase, attrBase) {
+					return p
+				}
+				continue
 			}
-		}
-		if attrKey == "" && attrBase != "" && strings.EqualFold(cfgBase, attrBase) {
-			return entry
+			if attrKey != "" && strings.EqualFold(cfgKey, attrKey) {
+				if cfgBase == "" || strings.EqualFold(cfgBase, attrBase) {
+					return p
+				}
+			}
+			if attrKey == "" && attrBase != "" && strings.EqualFold(cfgBase, attrBase) {
+				return p
+			}
 		}
 	}
 	if attrKey != "" {
-		for i := range e.cfg.ClaudeKey {
-			entry := &e.cfg.ClaudeKey[i]
-			if strings.EqualFold(strings.TrimSpace(entry.APIKey), attrKey) {
-				return entry
+		for i := range e.cfg.Providers {
+			p := &e.cfg.Providers[i]
+			if p.Type != config.ProviderTypeAnthropic {
+				continue
+			}
+			apiKeys := p.GetAPIKeys()
+			for _, apiKeyEntry := range apiKeys {
+				if strings.EqualFold(strings.TrimSpace(apiKeyEntry.Key), attrKey) {
+					return p
+				}
 			}
 		}
 	}

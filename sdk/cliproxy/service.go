@@ -642,7 +642,7 @@ func matchWildcard(pattern, value string) bool {
 	return true
 }
 
-func buildVertexCompatConfigModels(entry *config.VertexCompatKey) []*ModelInfo {
+func buildVertexCompatConfigModels(entry *config.Provider) []*ModelInfo {
 	if entry == nil || len(entry.Models) == 0 {
 		return nil
 	}
@@ -680,7 +680,7 @@ func buildVertexCompatConfigModels(entry *config.VertexCompatKey) []*ModelInfo {
 	return out
 }
 
-func buildClaudeConfigModels(entry *config.ClaudeKey) []*ModelInfo {
+func buildClaudeConfigModels(entry *config.Provider) []*ModelInfo {
 	if entry == nil || len(entry.Models) == 0 {
 		return nil
 	}

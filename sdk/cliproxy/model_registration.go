@@ -52,7 +52,7 @@ func registerModelsForAuth(a *coreauth.Auth, cfg *config.Config, wsGateway *wsre
 		if len(models) == 0 {
 			models = registry.GetGeminiModelsForProvider("gemini")
 		}
-		if entry := resolveConfigGeminiKey(a, cfg); entry != nil {
+		if entry := resolveProvider(a, cfg, config.ProviderTypeGemini); entry != nil {
 			if authKind == "apikey" {
 				excluded = entry.ExcludedModels
 			}
@@ -67,7 +67,7 @@ func registerModelsForAuth(a *coreauth.Auth, cfg *config.Config, wsGateway *wsre
 			models = registry.GetGeminiModelsForProvider("vertex")
 		}
 		if authKind == "apikey" {
-			if entry := resolveConfigVertexCompatKey(a, cfg); entry != nil && len(entry.Models) > 0 {
+			if entry := resolveProvider(a, cfg, config.ProviderTypeVertexCompat); entry != nil && len(entry.Models) > 0 {
 				models = buildVertexCompatConfigModels(entry)
 			}
 		}
@@ -99,7 +99,7 @@ func registerModelsForAuth(a *coreauth.Auth, cfg *config.Config, wsGateway *wsre
 		models = applyExcludedModels(models, excluded)
 	case "claude":
 		models = registry.GetClaudeModels()
-		if entry := resolveConfigClaudeKey(a, cfg); entry != nil {
+		if entry := resolveProvider(a, cfg, config.ProviderTypeAnthropic); entry != nil {
 			if len(entry.Models) > 0 {
 				models = buildClaudeConfigModels(entry)
 			}
@@ -110,7 +110,7 @@ func registerModelsForAuth(a *coreauth.Auth, cfg *config.Config, wsGateway *wsre
 		models = applyExcludedModels(models, excluded)
 	case "codex":
 		models = registry.GetOpenAIModels()
-		if entry := resolveConfigCodexKey(a, cfg); entry != nil {
+		if entry := resolveProvider(a, cfg, config.ProviderTypeOpenAI); entry != nil {
 			if authKind == "apikey" {
 				excluded = entry.ExcludedModels
 			}
@@ -190,13 +190,13 @@ func handleOpenAICompatProvider(a *coreauth.Auth, compatProviderKey, compatDispl
 			isCompatAuth = true
 		}
 	}
-	for i := range cfg.OpenAICompatibility {
-		compat := &cfg.OpenAICompatibility[i]
-		if strings.EqualFold(compat.Name, compatName) {
+	for i := range cfg.Providers {
+		p := &cfg.Providers[i]
+		if p.Type == config.ProviderTypeOpenAI && strings.EqualFold(p.Name, compatName) {
 			isCompatAuth = true
-			ms := make([]*ModelInfo, 0, len(compat.Models))
-			for j := range compat.Models {
-				m := compat.Models[j]
+			ms := make([]*ModelInfo, 0, len(p.Models))
+			for j := range p.Models {
+				m := p.Models[j]
 				modelID := m.Alias
 				if modelID == "" {
 					modelID = m.Name
@@ -205,7 +205,7 @@ func handleOpenAICompatProvider(a *coreauth.Auth, compatProviderKey, compatDispl
 					ID:          modelID,
 					Object:      "model",
 					Created:     time.Now().Unix(),
-					OwnedBy:     compat.Name,
+					OwnedBy:     p.Name,
 					Type:        "openai-compatibility",
 					DisplayName: m.Name,
 				})
@@ -227,8 +227,7 @@ func handleOpenAICompatProvider(a *coreauth.Auth, compatProviderKey, compatDispl
 	}
 }
 
-// resolveConfigClaudeKey finds the matching Claude configuration for the given auth.
-func resolveConfigClaudeKey(auth *coreauth.Auth, cfg *config.Config) *config.ClaudeKey {
+func resolveProvider(auth *coreauth.Auth, cfg *config.Config, providerType config.ProviderType) *config.Provider {
 	if auth == nil || cfg == nil {
 		return nil
 	}
@@ -237,120 +236,18 @@ func resolveConfigClaudeKey(auth *coreauth.Auth, cfg *config.Config) *config.Cla
 		attrKey = strings.TrimSpace(auth.Attributes["api_key"])
 		attrBase = strings.TrimSpace(auth.Attributes["base_url"])
 	}
-	for i := range cfg.ClaudeKey {
-		entry := &cfg.ClaudeKey[i]
-		cfgKey := strings.TrimSpace(entry.APIKey)
-		cfgBase := strings.TrimSpace(entry.BaseURL)
-		if attrKey != "" && attrBase != "" {
-			if strings.EqualFold(cfgKey, attrKey) && strings.EqualFold(cfgBase, attrBase) {
-				return entry
-			}
+	for i := range cfg.Providers {
+		p := &cfg.Providers[i]
+		if p.Type != providerType {
 			continue
 		}
-		if attrKey != "" && strings.EqualFold(cfgKey, attrKey) {
-			if cfgBase == "" || strings.EqualFold(cfgBase, attrBase) {
-				return entry
+		// Match by API key
+		for _, k := range p.GetAPIKeys() {
+			if strings.TrimSpace(k.Key) == attrKey {
+				if attrBase == "" || strings.TrimSpace(p.BaseURL) == attrBase {
+					return p
+				}
 			}
-		}
-		if attrKey == "" && attrBase != "" && strings.EqualFold(cfgBase, attrBase) {
-			return entry
-		}
-	}
-	if attrKey != "" {
-		for i := range cfg.ClaudeKey {
-			entry := &cfg.ClaudeKey[i]
-			if strings.EqualFold(strings.TrimSpace(entry.APIKey), attrKey) {
-				return entry
-			}
-		}
-	}
-	return nil
-}
-
-// resolveConfigGeminiKey finds the matching Gemini configuration for the given auth.
-func resolveConfigGeminiKey(auth *coreauth.Auth, cfg *config.Config) *config.GeminiKey {
-	if auth == nil || cfg == nil {
-		return nil
-	}
-	var attrKey, attrBase string
-	if auth.Attributes != nil {
-		attrKey = strings.TrimSpace(auth.Attributes["api_key"])
-		attrBase = strings.TrimSpace(auth.Attributes["base_url"])
-	}
-	for i := range cfg.GeminiKey {
-		entry := &cfg.GeminiKey[i]
-		cfgKey := strings.TrimSpace(entry.APIKey)
-		cfgBase := strings.TrimSpace(entry.BaseURL)
-		if attrKey != "" && strings.EqualFold(cfgKey, attrKey) {
-			if cfgBase == "" || strings.EqualFold(cfgBase, attrBase) {
-				return entry
-			}
-			continue
-		}
-		if attrKey == "" && attrBase != "" && strings.EqualFold(cfgBase, attrBase) {
-			return entry
-		}
-	}
-	return nil
-}
-
-// resolveConfigVertexCompatKey finds the matching Vertex compatibility configuration for the given auth.
-func resolveConfigVertexCompatKey(auth *coreauth.Auth, cfg *config.Config) *config.VertexCompatKey {
-	if auth == nil || cfg == nil {
-		return nil
-	}
-	var attrKey, attrBase string
-	if auth.Attributes != nil {
-		attrKey = strings.TrimSpace(auth.Attributes["api_key"])
-		attrBase = strings.TrimSpace(auth.Attributes["base_url"])
-	}
-	for i := range cfg.VertexCompatAPIKey {
-		entry := &cfg.VertexCompatAPIKey[i]
-		cfgKey := strings.TrimSpace(entry.APIKey)
-		cfgBase := strings.TrimSpace(entry.BaseURL)
-		if attrKey != "" && strings.EqualFold(cfgKey, attrKey) {
-			if cfgBase == "" || strings.EqualFold(cfgBase, attrBase) {
-				return entry
-			}
-			continue
-		}
-		if attrKey == "" && attrBase != "" && strings.EqualFold(cfgBase, attrBase) {
-			return entry
-		}
-	}
-	if attrKey != "" {
-		for i := range cfg.VertexCompatAPIKey {
-			entry := &cfg.VertexCompatAPIKey[i]
-			if strings.EqualFold(strings.TrimSpace(entry.APIKey), attrKey) {
-				return entry
-			}
-		}
-	}
-	return nil
-}
-
-// resolveConfigCodexKey finds the matching Codex configuration for the given auth.
-func resolveConfigCodexKey(auth *coreauth.Auth, cfg *config.Config) *config.CodexKey {
-	if auth == nil || cfg == nil {
-		return nil
-	}
-	var attrKey, attrBase string
-	if auth.Attributes != nil {
-		attrKey = strings.TrimSpace(auth.Attributes["api_key"])
-		attrBase = strings.TrimSpace(auth.Attributes["base_url"])
-	}
-	for i := range cfg.CodexKey {
-		entry := &cfg.CodexKey[i]
-		cfgKey := strings.TrimSpace(entry.APIKey)
-		cfgBase := strings.TrimSpace(entry.BaseURL)
-		if attrKey != "" && strings.EqualFold(cfgKey, attrKey) {
-			if cfgBase == "" || strings.EqualFold(cfgBase, attrBase) {
-				return entry
-			}
-			continue
-		}
-		if attrKey == "" && attrBase != "" && strings.EqualFold(cfgBase, attrBase) {
-			return entry
 		}
 	}
 	return nil

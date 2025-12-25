@@ -14,20 +14,6 @@ import (
 	coreauth "github.com/nghyane/llm-mux/sdk/cliproxy/auth"
 )
 
-// computeOpenAICompatModelsHash returns a stable hash for the compatibility models so that
-// changes to the model list trigger auth updates during hot reload.
-func computeOpenAICompatModelsHash(models []config.OpenAICompatibilityModel) string {
-	if len(models) == 0 {
-		return ""
-	}
-	data, err := json.Marshal(models)
-	if err != nil || len(data) == 0 {
-		return ""
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
-}
-
 func computeVertexCompatModelsHash(models []config.VertexCompatModel) string {
 	if len(models) == 0 {
 		return ""
@@ -41,7 +27,7 @@ func computeVertexCompatModelsHash(models []config.VertexCompatModel) string {
 }
 
 // computeClaudeModelsHash returns a stable hash for Claude model aliases.
-func computeClaudeModelsHash(models []config.ClaudeModel) string {
+func computeClaudeModelsHash(models []config.ProviderModel) string {
 	if len(models) == 0 {
 		return ""
 	}
@@ -236,19 +222,19 @@ func applyAuthExcludedModelsMeta(auth *coreauth.Auth, cfg *config.Config, perKey
 	}
 }
 
-func diffOpenAICompatibility(oldList, newList []config.OpenAICompatibility) []string {
+func diffProviders(oldList, newList []config.Provider) []string {
 	changes := make([]string, 0)
-	oldMap := make(map[string]config.OpenAICompatibility, len(oldList))
+	oldMap := make(map[string]config.Provider, len(oldList))
 	oldLabels := make(map[string]string, len(oldList))
 	for idx, entry := range oldList {
-		key, label := openAICompatKey(entry, idx)
+		key, label := providerKey(entry, idx)
 		oldMap[key] = entry
 		oldLabels[key] = label
 	}
-	newMap := make(map[string]config.OpenAICompatibility, len(newList))
+	newMap := make(map[string]config.Provider, len(newList))
 	newLabels := make(map[string]string, len(newList))
 	for idx, entry := range newList {
-		key, label := openAICompatKey(entry, idx)
+		key, label := providerKey(entry, idx)
 		newMap[key] = entry
 		newLabels[key] = label
 	}
@@ -273,11 +259,11 @@ func diffOpenAICompatibility(oldList, newList []config.OpenAICompatibility) []st
 		}
 		switch {
 		case !oldOk:
-			changes = append(changes, fmt.Sprintf("provider added: %s (api-keys=%d, models=%d)", label, countAPIKeys(newEntry), countOpenAIModels(newEntry.Models)))
+			changes = append(changes, fmt.Sprintf("provider added: %s (api-keys=%d, models=%d)", label, countAPIKeys(newEntry), countProviderModels(newEntry.Models)))
 		case !newOk:
-			changes = append(changes, fmt.Sprintf("provider removed: %s (api-keys=%d, models=%d)", label, countAPIKeys(oldEntry), countOpenAIModels(oldEntry.Models)))
+			changes = append(changes, fmt.Sprintf("provider removed: %s (api-keys=%d, models=%d)", label, countAPIKeys(oldEntry), countProviderModels(oldEntry.Models)))
 		default:
-			if detail := describeOpenAICompatibilityUpdate(oldEntry, newEntry); detail != "" {
+			if detail := describeProviderUpdate(oldEntry, newEntry); detail != "" {
 				changes = append(changes, fmt.Sprintf("provider updated: %s %s", label, detail))
 			}
 		}
@@ -285,11 +271,11 @@ func diffOpenAICompatibility(oldList, newList []config.OpenAICompatibility) []st
 	return changes
 }
 
-func describeOpenAICompatibilityUpdate(oldEntry, newEntry config.OpenAICompatibility) string {
+func describeProviderUpdate(oldEntry, newEntry config.Provider) string {
 	oldKeyCount := countAPIKeys(oldEntry)
 	newKeyCount := countAPIKeys(newEntry)
-	oldModelCount := countOpenAIModels(oldEntry.Models)
-	newModelCount := countOpenAIModels(newEntry.Models)
+	oldModelCount := countProviderModels(oldEntry.Models)
+	newModelCount := countProviderModels(newEntry.Models)
 	details := make([]string, 0, 3)
 	if oldKeyCount != newKeyCount {
 		details = append(details, fmt.Sprintf("api-keys %d -> %d", oldKeyCount, newKeyCount))
@@ -306,17 +292,17 @@ func describeOpenAICompatibilityUpdate(oldEntry, newEntry config.OpenAICompatibi
 	return "(" + strings.Join(details, ", ") + ")"
 }
 
-func countAPIKeys(entry config.OpenAICompatibility) int {
+func countAPIKeys(entry config.Provider) int {
 	count := 0
-	for _, keyEntry := range entry.APIKeyEntries {
-		if strings.TrimSpace(keyEntry.APIKey) != "" {
+	for _, keyEntry := range entry.GetAPIKeys() {
+		if strings.TrimSpace(keyEntry.Key) != "" {
 			count++
 		}
 	}
 	return count
 }
 
-func countOpenAIModels(models []config.OpenAICompatibilityModel) int {
+func countProviderModels(models []config.ProviderModel) int {
 	count := 0
 	for _, model := range models {
 		name := strings.TrimSpace(model.Name)
@@ -329,7 +315,7 @@ func countOpenAIModels(models []config.OpenAICompatibilityModel) int {
 	return count
 }
 
-func openAICompatKey(entry config.OpenAICompatibility, index int) (string, string) {
+func providerKey(entry config.Provider, index int) (string, string) {
 	name := strings.TrimSpace(entry.Name)
 	if name != "" {
 		return "name:" + name, name

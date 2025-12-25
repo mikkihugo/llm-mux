@@ -189,9 +189,11 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 		wd = configFilePath
 	}
 
-	providerNames := make([]string, 0, len(cfg.OpenAICompatibility))
-	for _, p := range cfg.OpenAICompatibility {
-		providerNames = append(providerNames, p.Name)
+	providerNames := make([]string, 0, len(cfg.Providers))
+	for _, p := range cfg.Providers {
+		if p.Type == "openai" || p.Type == "vertex-compat" {
+			providerNames = append(providerNames, p.GetDisplayName())
+		}
 	}
 	s := &Server{
 		engine:         engine,
@@ -444,9 +446,11 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 	// Save YAML snapshot for next comparison
 	s.oldConfigYaml, _ = yaml.Marshal(cfg)
 
-	providerNames := make([]string, 0, len(cfg.OpenAICompatibility))
-	for _, p := range cfg.OpenAICompatibility {
-		providerNames = append(providerNames, p.Name)
+	providerNames := make([]string, 0, len(cfg.Providers))
+	for _, p := range cfg.Providers {
+		if p.Type == "openai" || p.Type == "vertex-compat" {
+			providerNames = append(providerNames, p.GetDisplayName())
+		}
 	}
 	s.handlers.OpenAICompatProviders = providerNames
 
@@ -469,14 +473,27 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 
 	// Count client sources from configuration and auth directory
 	authFiles := util.CountAuthFiles(cfg.AuthDir)
-	geminiAPIKeyCount := len(cfg.GeminiKey)
-	claudeAPIKeyCount := len(cfg.ClaudeKey)
-	codexAPIKeyCount := len(cfg.CodexKey)
+	geminiAPIKeyCount := 0
+	claudeAPIKeyCount := 0
+	codexAPIKeyCount := 0
 	vertexAICompatCount := len(cfg.VertexCompatAPIKey)
 	openAICompatCount := 0
-	for i := range cfg.OpenAICompatibility {
-		entry := cfg.OpenAICompatibility[i]
-		openAICompatCount += len(entry.APIKeyEntries)
+	for _, p := range cfg.Providers {
+		keys := p.GetAPIKeys()
+		switch p.Type {
+		case "gemini":
+			geminiAPIKeyCount += len(keys)
+		case "anthropic":
+			if p.Name == "codex" {
+				codexAPIKeyCount += len(keys)
+			} else {
+				claudeAPIKeyCount += len(keys)
+			}
+		case "openai":
+			openAICompatCount += len(keys)
+		case "vertex-compat":
+			vertexAICompatCount += len(keys)
+		}
 	}
 
 	total := authFiles + geminiAPIKeyCount + claudeAPIKeyCount + codexAPIKeyCount + vertexAICompatCount + openAICompatCount

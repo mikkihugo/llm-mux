@@ -1,6 +1,8 @@
 package watcher
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,219 +10,93 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/runtime/geminicli"
 	coreauth "github.com/nghyane/llm-mux/sdk/cliproxy/auth"
 )
+
+func computeProviderModelsHash(models []config.ProviderModel) string {
+	if len(models) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(models)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func createProviderAuth(idGen *stableIDGenerator, providerName, label, key, baseURL, proxyURL string, headers map[string]string, models []config.ProviderModel, excludedModels []string, cfg *config.Config, now time.Time) *coreauth.Auth {
+	idKind := fmt.Sprintf("%s:apikey", providerName)
+	id, token := idGen.next(idKind, key, baseURL, proxyURL)
+	attrs := map[string]string{
+		"source":  fmt.Sprintf("config:%s[%s]", providerName, token),
+		"api_key": key,
+	}
+	if baseURL != "" {
+		attrs["base_url"] = baseURL
+	}
+	if hash := computeProviderModelsHash(models); hash != "" {
+		attrs["models_hash"] = hash
+	}
+	addConfigHeadersToAttrs(headers, attrs)
+	a := &coreauth.Auth{
+		ID:         id,
+		Provider:   providerName,
+		Label:      label,
+		Status:     coreauth.StatusActive,
+		ProxyURL:   proxyURL,
+		Attributes: attrs,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	applyAuthExcludedModelsMeta(a, cfg, excludedModels, "apikey")
+	return a
+}
 
 // SnapshotCoreAuths converts current clients snapshot into core auth entries.
 func (w *Watcher) SnapshotCoreAuths() []*coreauth.Auth {
 	out := make([]*coreauth.Auth, 0, 32)
 	now := time.Now()
 	idGen := newStableIDGenerator()
-	// Also synthesize auth entries for OpenAI-compatibility providers directly from config
+	// Synthesize auth entries from cfg.Providers
 	w.clientsMutex.RLock()
 	cfg := w.config
 	w.clientsMutex.RUnlock()
 	if cfg != nil {
-		// Gemini official API keys -> synthesize auths
-		for i := range cfg.GeminiKey {
-			entry := cfg.GeminiKey[i]
-			key := strings.TrimSpace(entry.APIKey)
-			if key == "" {
+		for _, provider := range cfg.Providers {
+			var pName, lbl string
+			switch provider.Type {
+			case config.ProviderTypeGemini:
+				pName = "gemini"
+				lbl = "gemini-apikey"
+			case config.ProviderTypeAnthropic:
+				pName = "claude"
+				lbl = "claude-apikey"
+			case config.ProviderTypeOpenAI:
+				displayName := provider.GetDisplayName()
+				pName = strings.ToLower(displayName)
+				lbl = displayName
+			case config.ProviderTypeVertexCompat:
+				pName = "vertex"
+				lbl = "vertex-apikey"
+			default:
 				continue
 			}
-			base := strings.TrimSpace(entry.BaseURL)
-			proxyURL := strings.TrimSpace(entry.ProxyURL)
-			id, token := idGen.next("gemini:apikey", key, base)
-			attrs := map[string]string{
-				"source":  fmt.Sprintf("config:gemini[%s]", token),
-				"api_key": key,
-			}
-			if base != "" {
-				attrs["base_url"] = base
-			}
-			addConfigHeadersToAttrs(entry.Headers, attrs)
-			a := &coreauth.Auth{
-				ID:         id,
-				Provider:   "gemini",
-				Label:      "gemini-apikey",
-				Status:     coreauth.StatusActive,
-				ProxyURL:   proxyURL,
-				Attributes: attrs,
-				CreatedAt:  now,
-				UpdatedAt:  now,
-			}
-			applyAuthExcludedModelsMeta(a, cfg, entry.ExcludedModels, "apikey")
-			out = append(out, a)
-		}
-
-		// Claude API keys -> synthesize auths
-		for i := range cfg.ClaudeKey {
-			ck := cfg.ClaudeKey[i]
-			key := strings.TrimSpace(ck.APIKey)
-			if key == "" {
-				continue
-			}
-			base := strings.TrimSpace(ck.BaseURL)
-			id, token := idGen.next("claude:apikey", key, base)
-			attrs := map[string]string{
-				"source":  fmt.Sprintf("config:claude[%s]", token),
-				"api_key": key,
-			}
-			if base != "" {
-				attrs["base_url"] = base
-			}
-			if hash := computeClaudeModelsHash(ck.Models); hash != "" {
-				attrs["models_hash"] = hash
-			}
-			addConfigHeadersToAttrs(ck.Headers, attrs)
-			proxyURL := strings.TrimSpace(ck.ProxyURL)
-			a := &coreauth.Auth{
-				ID:         id,
-				Provider:   "claude",
-				Label:      "claude-apikey",
-				Status:     coreauth.StatusActive,
-				ProxyURL:   proxyURL,
-				Attributes: attrs,
-				CreatedAt:  now,
-				UpdatedAt:  now,
-			}
-			applyAuthExcludedModelsMeta(a, cfg, ck.ExcludedModels, "apikey")
-			out = append(out, a)
-		}
-		// Codex API keys -> synthesize auths
-		for i := range cfg.CodexKey {
-			ck := cfg.CodexKey[i]
-			key := strings.TrimSpace(ck.APIKey)
-			if key == "" {
-				continue
-			}
-			id, token := idGen.next("codex:apikey", key, ck.BaseURL)
-			attrs := map[string]string{
-				"source":  fmt.Sprintf("config:codex[%s]", token),
-				"api_key": key,
-			}
-			if ck.BaseURL != "" {
-				attrs["base_url"] = ck.BaseURL
-			}
-			addConfigHeadersToAttrs(ck.Headers, attrs)
-			proxyURL := strings.TrimSpace(ck.ProxyURL)
-			a := &coreauth.Auth{
-				ID:         id,
-				Provider:   "codex",
-				Label:      "codex-apikey",
-				Status:     coreauth.StatusActive,
-				ProxyURL:   proxyURL,
-				Attributes: attrs,
-				CreatedAt:  now,
-				UpdatedAt:  now,
-			}
-			applyAuthExcludedModelsMeta(a, cfg, ck.ExcludedModels, "apikey")
-			out = append(out, a)
-		}
-		for i := range cfg.OpenAICompatibility {
-			compat := &cfg.OpenAICompatibility[i]
-			providerName := strings.ToLower(strings.TrimSpace(compat.Name))
-			if providerName == "" {
-				providerName = "openai-compatibility"
-			}
-			base := strings.TrimSpace(compat.BaseURL)
-
-			// Handle new APIKeyEntries format (preferred)
-			createdEntries := 0
-			for j := range compat.APIKeyEntries {
-				entry := &compat.APIKeyEntries[j]
-				key := strings.TrimSpace(entry.APIKey)
-				proxyURL := strings.TrimSpace(entry.ProxyURL)
-				idKind := fmt.Sprintf("openai-compatibility:%s", providerName)
-				id, token := idGen.next(idKind, key, base, proxyURL)
-				attrs := map[string]string{
-					"source":       fmt.Sprintf("config:%s[%s]", providerName, token),
-					"base_url":     base,
-					"compat_name":  compat.Name,
-					"provider_key": providerName,
+			for _, apiKey := range provider.GetAPIKeys() {
+				key := strings.TrimSpace(apiKey.Key)
+				if key == "" {
+					continue
 				}
-				if key != "" {
-					attrs["api_key"] = key
+				proxy := strings.TrimSpace(apiKey.ProxyURL)
+				if proxy == "" {
+					proxy = strings.TrimSpace(provider.ProxyURL)
 				}
-				if hash := computeOpenAICompatModelsHash(compat.Models); hash != "" {
-					attrs["models_hash"] = hash
-				}
-				addConfigHeadersToAttrs(compat.Headers, attrs)
-				a := &coreauth.Auth{
-					ID:         id,
-					Provider:   providerName,
-					Label:      compat.Name,
-					Status:     coreauth.StatusActive,
-					ProxyURL:   proxyURL,
-					Attributes: attrs,
-					CreatedAt:  now,
-					UpdatedAt:  now,
-				}
-				out = append(out, a)
-				createdEntries++
-			}
-			if createdEntries == 0 {
-				idKind := fmt.Sprintf("openai-compatibility:%s", providerName)
-				id, token := idGen.next(idKind, base)
-				attrs := map[string]string{
-					"source":       fmt.Sprintf("config:%s[%s]", providerName, token),
-					"base_url":     base,
-					"compat_name":  compat.Name,
-					"provider_key": providerName,
-				}
-				if hash := computeOpenAICompatModelsHash(compat.Models); hash != "" {
-					attrs["models_hash"] = hash
-				}
-				addConfigHeadersToAttrs(compat.Headers, attrs)
-				a := &coreauth.Auth{
-					ID:         id,
-					Provider:   providerName,
-					Label:      compat.Name,
-					Status:     coreauth.StatusActive,
-					Attributes: attrs,
-					CreatedAt:  now,
-					UpdatedAt:  now,
-				}
-				out = append(out, a)
+				auth := createProviderAuth(idGen, pName, lbl, key, strings.TrimSpace(provider.BaseURL), proxy, provider.Headers, provider.Models, provider.ExcludedModels, cfg, now)
+				out = append(out, auth)
 			}
 		}
-	}
-
-	// Process Vertex API key providers (Vertex-compatible endpoints)
-	for i := range cfg.VertexCompatAPIKey {
-		compat := &cfg.VertexCompatAPIKey[i]
-		providerName := "vertex"
-		base := strings.TrimSpace(compat.BaseURL)
-
-		key := strings.TrimSpace(compat.APIKey)
-		proxyURL := strings.TrimSpace(compat.ProxyURL)
-		idKind := fmt.Sprintf("vertex:apikey:%s", base)
-		id, token := idGen.next(idKind, key, base, proxyURL)
-		attrs := map[string]string{
-			"source":       fmt.Sprintf("config:vertex-apikey[%s]", token),
-			"base_url":     base,
-			"provider_key": providerName,
-		}
-		if key != "" {
-			attrs["api_key"] = key
-		}
-		if hash := computeVertexCompatModelsHash(compat.Models); hash != "" {
-			attrs["models_hash"] = hash
-		}
-		addConfigHeadersToAttrs(compat.Headers, attrs)
-		a := &coreauth.Auth{
-			ID:         id,
-			Provider:   providerName,
-			Label:      "vertex-apikey",
-			Status:     coreauth.StatusActive,
-			ProxyURL:   proxyURL,
-			Attributes: attrs,
-			CreatedAt:  now,
-			UpdatedAt:  now,
-		}
-		applyAuthExcludedModelsMeta(a, cfg, nil, "apikey")
-		out = append(out, a)
 	}
 
 	// Also synthesize auth entries directly from auth files (for OAuth/file-backed providers)

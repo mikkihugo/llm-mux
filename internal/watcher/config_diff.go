@@ -65,93 +65,12 @@ func buildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	} else if !reflect.DeepEqual(trimStrings(oldCfg.APIKeys), trimStrings(newCfg.APIKeys)) {
 		changes = append(changes, "api-keys: values updated (count unchanged, redacted)")
 	}
-	if len(oldCfg.GeminiKey) != len(newCfg.GeminiKey) {
-		changes = append(changes, fmt.Sprintf("gemini-api-key count: %d -> %d", len(oldCfg.GeminiKey), len(newCfg.GeminiKey)))
-	} else {
-		for i := range oldCfg.GeminiKey {
-			if i >= len(newCfg.GeminiKey) {
-				break
-			}
-			o := oldCfg.GeminiKey[i]
-			n := newCfg.GeminiKey[i]
-			if strings.TrimSpace(o.BaseURL) != strings.TrimSpace(n.BaseURL) {
-				changes = append(changes, fmt.Sprintf("gemini[%d].base-url: %s -> %s", i, strings.TrimSpace(o.BaseURL), strings.TrimSpace(n.BaseURL)))
-			}
-			if strings.TrimSpace(o.ProxyURL) != strings.TrimSpace(n.ProxyURL) {
-				changes = append(changes, fmt.Sprintf("gemini[%d].proxy-url: %s -> %s", i, strings.TrimSpace(o.ProxyURL), strings.TrimSpace(n.ProxyURL)))
-			}
-			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
-				changes = append(changes, fmt.Sprintf("gemini[%d].api-key: updated", i))
-			}
-			if !equalStringMap(o.Headers, n.Headers) {
-				changes = append(changes, fmt.Sprintf("gemini[%d].headers: updated", i))
-			}
-			oldExcluded := summarizeExcludedModels(o.ExcludedModels)
-			newExcluded := summarizeExcludedModels(n.ExcludedModels)
-			if oldExcluded.hash != newExcluded.hash {
-				changes = append(changes, fmt.Sprintf("gemini[%d].excluded-models: updated (%d -> %d entries)", i, oldExcluded.count, newExcluded.count))
-			}
-		}
-	}
 
-	// Claude keys (do not print key material)
-	if len(oldCfg.ClaudeKey) != len(newCfg.ClaudeKey) {
-		changes = append(changes, fmt.Sprintf("claude-api-key count: %d -> %d", len(oldCfg.ClaudeKey), len(newCfg.ClaudeKey)))
-	} else {
-		for i := range oldCfg.ClaudeKey {
-			if i >= len(newCfg.ClaudeKey) {
-				break
-			}
-			o := oldCfg.ClaudeKey[i]
-			n := newCfg.ClaudeKey[i]
-			if strings.TrimSpace(o.BaseURL) != strings.TrimSpace(n.BaseURL) {
-				changes = append(changes, fmt.Sprintf("claude[%d].base-url: %s -> %s", i, strings.TrimSpace(o.BaseURL), strings.TrimSpace(n.BaseURL)))
-			}
-			if strings.TrimSpace(o.ProxyURL) != strings.TrimSpace(n.ProxyURL) {
-				changes = append(changes, fmt.Sprintf("claude[%d].proxy-url: %s -> %s", i, strings.TrimSpace(o.ProxyURL), strings.TrimSpace(n.ProxyURL)))
-			}
-			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
-				changes = append(changes, fmt.Sprintf("claude[%d].api-key: updated", i))
-			}
-			if !equalStringMap(o.Headers, n.Headers) {
-				changes = append(changes, fmt.Sprintf("claude[%d].headers: updated", i))
-			}
-			oldExcluded := summarizeExcludedModels(o.ExcludedModels)
-			newExcluded := summarizeExcludedModels(n.ExcludedModels)
-			if oldExcluded.hash != newExcluded.hash {
-				changes = append(changes, fmt.Sprintf("claude[%d].excluded-models: updated (%d -> %d entries)", i, oldExcluded.count, newExcluded.count))
-			}
-		}
-	}
-
-	// Codex keys (do not print key material)
-	if len(oldCfg.CodexKey) != len(newCfg.CodexKey) {
-		changes = append(changes, fmt.Sprintf("codex-api-key count: %d -> %d", len(oldCfg.CodexKey), len(newCfg.CodexKey)))
-	} else {
-		for i := range oldCfg.CodexKey {
-			if i >= len(newCfg.CodexKey) {
-				break
-			}
-			o := oldCfg.CodexKey[i]
-			n := newCfg.CodexKey[i]
-			if strings.TrimSpace(o.BaseURL) != strings.TrimSpace(n.BaseURL) {
-				changes = append(changes, fmt.Sprintf("codex[%d].base-url: %s -> %s", i, strings.TrimSpace(o.BaseURL), strings.TrimSpace(n.BaseURL)))
-			}
-			if strings.TrimSpace(o.ProxyURL) != strings.TrimSpace(n.ProxyURL) {
-				changes = append(changes, fmt.Sprintf("codex[%d].proxy-url: %s -> %s", i, strings.TrimSpace(o.ProxyURL), strings.TrimSpace(n.ProxyURL)))
-			}
-			if strings.TrimSpace(o.APIKey) != strings.TrimSpace(n.APIKey) {
-				changes = append(changes, fmt.Sprintf("codex[%d].api-key: updated", i))
-			}
-			if !equalStringMap(o.Headers, n.Headers) {
-				changes = append(changes, fmt.Sprintf("codex[%d].headers: updated", i))
-			}
-			oldExcluded := summarizeExcludedModels(o.ExcludedModels)
-			newExcluded := summarizeExcludedModels(n.ExcludedModels)
-			if oldExcluded.hash != newExcluded.hash {
-				changes = append(changes, fmt.Sprintf("codex[%d].excluded-models: updated (%d -> %d entries)", i, oldExcluded.count, newExcluded.count))
-			}
-		}
+	// Providers
+	if len(oldCfg.Providers) != len(newCfg.Providers) {
+		changes = append(changes, fmt.Sprintf("providers count: %d -> %d", len(oldCfg.Providers), len(newCfg.Providers)))
+	} else if !reflect.DeepEqual(oldCfg.Providers, newCfg.Providers) {
+		changes = append(changes, "providers: updated")
 	}
 
 	// AmpCode settings (redacted where needed)
@@ -186,14 +105,6 @@ func buildConfigChangeDetails(oldCfg, newCfg *config.Config) []string {
 	// Remote management (never print the key)
 	if oldCfg.RemoteManagement.AllowRemote != newCfg.RemoteManagement.AllowRemote {
 		changes = append(changes, fmt.Sprintf("remote-management.allow-remote: %t -> %t", oldCfg.RemoteManagement.AllowRemote, newCfg.RemoteManagement.AllowRemote))
-	}
-
-	// OpenAI compatibility providers (summarized)
-	if compat := diffOpenAICompatibility(oldCfg.OpenAICompatibility, newCfg.OpenAICompatibility); len(compat) > 0 {
-		changes = append(changes, "openai-compatibility:")
-		for _, c := range compat {
-			changes = append(changes, "  "+c)
-		}
 	}
 
 	return changes

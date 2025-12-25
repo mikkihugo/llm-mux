@@ -296,7 +296,7 @@ func (e *OpenAICompatExecutor) resolveUpstreamModel(alias string, auth *cliproxy
 	return ""
 }
 
-func (e *OpenAICompatExecutor) resolveCompatConfig(auth *cliproxyauth.Auth) *config.OpenAICompatibility {
+func (e *OpenAICompatExecutor) resolveCompatConfig(auth *cliproxyauth.Auth) *config.Provider {
 	if auth == nil || e.cfg == nil {
 		return nil
 	}
@@ -312,11 +312,14 @@ func (e *OpenAICompatExecutor) resolveCompatConfig(auth *cliproxyauth.Auth) *con
 	if v := strings.TrimSpace(auth.Provider); v != "" {
 		candidates = append(candidates, v)
 	}
-	for i := range e.cfg.OpenAICompatibility {
-		compat := &e.cfg.OpenAICompatibility[i]
+	for i := range e.cfg.Providers {
+		provider := &e.cfg.Providers[i]
+		if provider.Type != config.ProviderTypeOpenAI {
+			continue
+		}
 		for _, candidate := range candidates {
-			if candidate != "" && strings.EqualFold(strings.TrimSpace(candidate), compat.Name) {
-				return compat
+			if candidate != "" && strings.EqualFold(strings.TrimSpace(candidate), provider.Name) {
+				return provider
 			}
 		}
 	}

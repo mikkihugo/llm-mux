@@ -57,10 +57,9 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.PATCH("/api-keys", s.mgmt.PatchAPIKeys)
 		mgmt.DELETE("/api-keys", s.mgmt.DeleteAPIKeys)
 
-		mgmt.GET("/gemini-api-key", s.mgmt.GetGeminiKeys)
-		mgmt.PUT("/gemini-api-key", s.mgmt.PutGeminiKeys)
-		mgmt.PATCH("/gemini-api-key", s.mgmt.PatchGeminiKey)
-		mgmt.DELETE("/gemini-api-key", s.mgmt.DeleteGeminiKey)
+		mgmt.GET("/providers", s.mgmt.GetProviders)
+		mgmt.PUT("/providers", s.mgmt.PutProviders)
+		mgmt.DELETE("/providers", s.mgmt.DeleteProvider)
 
 		mgmt.GET("/logs", s.mgmt.GetLogs)
 		mgmt.DELETE("/logs", s.mgmt.DeleteLogs)
@@ -79,21 +78,6 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.GET("/max-retry-interval", s.mgmt.GetMaxRetryInterval)
 		mgmt.PUT("/max-retry-interval", s.mgmt.PutMaxRetryInterval)
 		mgmt.PATCH("/max-retry-interval", s.mgmt.PutMaxRetryInterval)
-
-		mgmt.GET("/claude-api-key", s.mgmt.GetClaudeKeys)
-		mgmt.PUT("/claude-api-key", s.mgmt.PutClaudeKeys)
-		mgmt.PATCH("/claude-api-key", s.mgmt.PatchClaudeKey)
-		mgmt.DELETE("/claude-api-key", s.mgmt.DeleteClaudeKey)
-
-		mgmt.GET("/codex-api-key", s.mgmt.GetCodexKeys)
-		mgmt.PUT("/codex-api-key", s.mgmt.PutCodexKeys)
-		mgmt.PATCH("/codex-api-key", s.mgmt.PatchCodexKey)
-		mgmt.DELETE("/codex-api-key", s.mgmt.DeleteCodexKey)
-
-		mgmt.GET("/openai-compatibility", s.mgmt.GetOpenAICompat)
-		mgmt.PUT("/openai-compatibility", s.mgmt.PutOpenAICompat)
-		mgmt.PATCH("/openai-compatibility", s.mgmt.PatchOpenAICompat)
-		mgmt.DELETE("/openai-compatibility", s.mgmt.DeleteOpenAICompat)
 
 		mgmt.GET("/oauth-excluded-models", s.mgmt.GetOAuthExcludedModels)
 		mgmt.PUT("/oauth-excluded-models", s.mgmt.PutOAuthExcludedModels)
