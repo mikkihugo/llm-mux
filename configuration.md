@@ -50,11 +50,23 @@ providers:
     proxy-url: ""                     # Optional
     excluded-models: []               # Optional
 
-  # Anthropic (Claude)
+  # Anthropic (Claude) - official API or compatible endpoints
   - type: anthropic
     api-key: "sk-ant-..."
     base-url: ""                      # Optional, defaults to api.anthropic.com
     proxy-url: ""
+    models:                           # Optional: override default models for custom endpoints
+      - name: "claude-3-5-sonnet-20241022"
+        alias: "claude-sonnet"
+
+  # Anthropic-compatible endpoint example (OpenRouter, AWS Bedrock proxy, etc.)
+  - type: anthropic
+    name: "openrouter-claude"
+    api-key: "sk-or-v1-..."
+    base-url: "https://openrouter.ai/api/v1"
+    models:
+      - name: "anthropic/claude-3.5-sonnet"
+        alias: "claude-sonnet-or"
 
   # OpenAI-compatible (OpenAI, DeepSeek, Groq, etc.)
   - type: openai
@@ -103,9 +115,11 @@ providers:
 | Type | Description | Requires |
 |------|-------------|----------|
 | `gemini` | Google Gemini API | `api-key` |
-| `anthropic` | Anthropic Claude API | `api-key` |
-| `openai` | OpenAI-compatible APIs | `base-url`, `api-keys`, `models` |
+| `anthropic` | Anthropic Claude API or compatible | `api-key` |
+| `openai` | OpenAI-compatible APIs | `base-url`, `api-key`, `models` |
 | `vertex-compat` | Vertex AI-compatible | `base-url`, `api-key`, `models` |
+
+> **Note:** `anthropic` type supports custom endpoints via `base-url` and `models` for Claude-compatible APIs (OpenRouter, AWS Bedrock proxies, etc.)
 
 ### Provider Fields
 
