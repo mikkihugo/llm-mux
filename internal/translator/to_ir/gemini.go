@@ -113,7 +113,12 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 
 	if tools := parsed.Get("tools"); tools.Exists() && tools.IsArray() {
 		for _, t := range tools.Array() {
-			if fds := t.Get("functionDeclarations"); fds.Exists() && fds.IsArray() {
+			// Support both camelCase and snake_case for functionDeclarations
+			fds := t.Get("functionDeclarations")
+			if !fds.Exists() || !fds.IsArray() {
+				fds = t.Get("function_declarations")
+			}
+			if fds.Exists() && fds.IsArray() {
 				for _, fd := range fds.Array() {
 					var params map[string]any
 					if p := fd.Get("parameters"); p.Exists() && p.IsObject() {
