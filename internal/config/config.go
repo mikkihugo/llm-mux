@@ -311,10 +311,26 @@ func NewDefaultConfig() *Config {
 		RequestRetry:           3,
 		MaxRetryInterval:       30,
 		UseCanonicalTranslator: true,
+		QuotaExceeded: QuotaExceeded{
+			SwitchProject:      true,
+			SwitchPreviewModel: true,
+		},
 		AmpCode: AmpCode{
 			RestrictManagementToLocalhost: true,
 		},
 	}
+}
+
+// GenerateDefaultConfigYAML generates a minimal default config YAML from NewDefaultConfig().
+// This replaces the embedded config.example.yaml file.
+func GenerateDefaultConfigYAML() []byte {
+	cfg := NewDefaultConfig()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		// Fallback to minimal config if marshaling fails
+		return []byte("port: 8317\nauth-dir: \"$XDG_CONFIG_HOME/llm-mux/auth\"\ndisable-auth: true\n")
+	}
+	return data
 }
 
 // LoadConfig reads a YAML configuration file from the given path,
@@ -322,6 +338,7 @@ func NewDefaultConfig() *Config {
 // and returns it.
 // Parameters:
 //   - configFile: The path to the YAML configuration file
+//
 // Returns:
 //   - *Config: The loaded configuration
 //   - error: An error if the configuration could not be loaded

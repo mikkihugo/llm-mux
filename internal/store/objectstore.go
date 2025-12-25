@@ -361,7 +361,7 @@ func (s *ObjectTokenStore) syncConfigFromBucket(ctx context.Context) error {
 			if errCreate := os.MkdirAll(filepath.Dir(s.configPath), 0o700); errCreate != nil {
 				return fmt.Errorf("object store: prepare config directory: %w", errCreate)
 			}
-			if errWrite := os.WriteFile(s.configPath, embedded.DefaultConfigTemplate, 0o600); errWrite != nil {
+			if errWrite := os.WriteFile(s.configPath, embedded.DefaultConfigTemplate(), 0o600); errWrite != nil {
 				return fmt.Errorf("object store: write config from template: %w", errWrite)
 			}
 		}
