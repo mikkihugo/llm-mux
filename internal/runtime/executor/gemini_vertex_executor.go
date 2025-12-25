@@ -34,6 +34,7 @@ import (
 
 	vertexauth "github.com/nghyane/llm-mux/internal/auth/vertex"
 	"github.com/nghyane/llm-mux/internal/config"
+	"github.com/nghyane/llm-mux/internal/registry"
 	"github.com/nghyane/llm-mux/internal/translator/from_ir"
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/util"
@@ -514,4 +515,37 @@ func vertexAccessToken(ctx context.Context, cfg *config.Config, auth *cliproxyau
 		return "", fmt.Errorf("vertex executor: get access token failed: %w", errTok)
 	}
 	return tok.AccessToken, nil
+}
+
+// =============================================================================
+// Dynamic Model Fetching
+// =============================================================================
+
+// FetchVertexModels retrieves available models from Vertex AI.
+// Supports both API key and service account authentication.
+func FetchVertexModels(ctx context.Context, auth *cliproxyauth.Auth, cfg *config.Config) []*registry.ModelInfo {
+	exec := &GeminiVertexExecutor{cfg: cfg}
+	strategy, err := exec.resolveStrategy(auth)
+	if err != nil {
+		log.Errorf("vertex: failed to resolve auth strategy: %v", err)
+		return nil
+	}
+
+	// For API key mode, use GL API endpoint
+	if apiStrategy, ok := strategy.(*apiKeyStrategy); ok {
+		httpClient := newProxyAwareHTTPClient(ctx, cfg, auth, 0)
+
+		fetchCfg := GLAPIFetchConfig{
+			BaseURL:      apiStrategy.baseURL,
+			APIKey:       apiStrategy.apiKey,
+			ProviderType: "vertex",
+		}
+
+		return FetchGLAPIModels(ctx, httpClient, fetchCfg)
+	}
+
+	// For service account mode, use Vertex AI endpoint
+	// Note: Vertex AI list models endpoint is different and more complex
+	// For now, fall back to static models for SA mode
+	return nil
 }

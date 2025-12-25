@@ -105,12 +105,9 @@ type quotaGroupIndex struct {
 }
 
 type quotaGroupState struct {
-	// NextRetryAfter is the earliest time any model in this group can retry
 	NextRetryAfter time.Time
-	// NextRecoverAt is when quota recovers
-	NextRecoverAt time.Time
-	// SourceModel is the model that originally triggered the quota block
-	SourceModel string
+	NextRecoverAt  time.Time
+	SourceModel    string
 }
 
 // AuthRuntimeData is a composite struct that holds both quota group index

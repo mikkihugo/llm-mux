@@ -91,12 +91,8 @@ type StreamingLogWriter interface {
 }
 
 // FileRequestLogger implements RequestLogger using file-based storage.
-// It provides file-based logging functionality for HTTP requests and responses.
 type FileRequestLogger struct {
-	// enabled indicates whether request logging is currently enabled.
 	enabled bool
-
-	// logsDir is the directory where log files are stored.
 	logsDir string
 }
 
@@ -106,6 +102,7 @@ type FileRequestLogger struct {
 //   - logsDir: The directory where log files should be stored (can be relative)
 //   - configDir: The directory of the configuration file; when logsDir is
 //     relative, it will be resolved relative to this directory
+//
 // Returns:
 //   - *FileRequestLogger: A new file-based request logger instance
 func NewFileRequestLogger(enabled bool, logsDir string, configDir string) *FileRequestLogger {
@@ -148,6 +145,7 @@ func (l *FileRequestLogger) SetEnabled(enabled bool) {
 //   - response: The raw response data
 //   - apiRequest: The API request data
 //   - apiResponse: The API response data
+//
 // Returns:
 //   - error: An error if logging fails, nil otherwise
 func (l *FileRequestLogger) LogRequest(url, method string, requestHeaders map[string][]string, body []byte, statusCode int, responseHeaders map[string][]string, response, apiRequest, apiResponse []byte, apiResponseErrors []*interfaces.ErrorMessage) error {
@@ -207,6 +205,7 @@ func (l *FileRequestLogger) logRequest(url, method string, requestHeaders map[st
 //   - method: The HTTP method
 //   - headers: The request headers
 //   - body: The request body
+//
 // Returns:
 //   - StreamingLogWriter: A writer for streaming response chunks
 //   - error: An error if logging initialization fails, nil otherwise
@@ -269,6 +268,7 @@ func (l *FileRequestLogger) ensureLogsDir() error {
 // generateFilename creates a sanitized filename from the URL path and current timestamp.
 // Parameters:
 //   - url: The request URL
+//
 // Returns:
 //   - string: A sanitized filename for the log file
 func (l *FileRequestLogger) generateFilename(url string) string {
@@ -294,6 +294,7 @@ func (l *FileRequestLogger) generateFilename(url string) string {
 // sanitizeForFilename replaces characters that are not safe for filenames.
 // Parameters:
 //   - path: The path to sanitize
+//
 // Returns:
 //   - string: A sanitized filename
 func (l *FileRequestLogger) sanitizeForFilename(path string) string {
@@ -379,6 +380,7 @@ func (l *FileRequestLogger) cleanupOldErrorLogs() error {
 //   - response: The raw response data
 //   - status: The response status code
 //   - responseHeaders: The response headers
+//
 // Returns:
 //   - string: The formatted log content
 func (l *FileRequestLogger) formatLogContent(url, method string, headers map[string][]string, body, apiRequest, apiResponse, response []byte, status int, responseHeaders map[string][]string, apiResponseErrors []*interfaces.ErrorMessage) string {
@@ -443,6 +445,7 @@ func (l *FileRequestLogger) formatLogContent(url, method string, headers map[str
 // Parameters:
 //   - responseHeaders: The response headers
 //   - response: The response data to decompress
+//
 // Returns:
 //   - []byte: The decompressed response data
 //   - error: An error if decompression fails, nil otherwise
@@ -478,6 +481,7 @@ func (l *FileRequestLogger) decompressResponse(responseHeaders map[string][]stri
 // decompressGzip decompresses gzip-encoded data.
 // Parameters:
 //   - data: The gzip-encoded data to decompress
+//
 // Returns:
 //   - []byte: The decompressed data
 //   - error: An error if decompression fails, nil otherwise
@@ -503,6 +507,7 @@ func (l *FileRequestLogger) decompressGzip(data []byte) ([]byte, error) {
 // decompressDeflate decompresses deflate-encoded data.
 // Parameters:
 //   - data: The deflate-encoded data to decompress
+//
 // Returns:
 //   - []byte: The decompressed data
 //   - error: An error if decompression fails, nil otherwise
@@ -525,6 +530,7 @@ func (l *FileRequestLogger) decompressDeflate(data []byte) ([]byte, error) {
 // decompressBrotli decompresses brotli-encoded data.
 // Parameters:
 //   - data: The brotli-encoded data to decompress
+//
 // Returns:
 //   - []byte: The decompressed data
 //   - error: An error if decompression fails, nil otherwise
@@ -542,6 +548,7 @@ func (l *FileRequestLogger) decompressBrotli(data []byte) ([]byte, error) {
 // decompressZstd decompresses zstd-encoded data.
 // Parameters:
 //   - data: The zstd-encoded data to decompress
+//
 // Returns:
 //   - []byte: The decompressed data
 //   - error: An error if decompression fails, nil otherwise
@@ -566,6 +573,7 @@ func (l *FileRequestLogger) decompressZstd(data []byte) ([]byte, error) {
 //   - method: The HTTP method
 //   - headers: The request headers
 //   - body: The request body
+//
 // Returns:
 //   - string: The formatted request information
 func (l *FileRequestLogger) formatRequestInfo(url, method string, headers map[string][]string, body []byte) string {
@@ -596,19 +604,10 @@ func (l *FileRequestLogger) formatRequestInfo(url, method string, headers map[st
 // FileStreamingLogWriter implements StreamingLogWriter for file-based streaming logs.
 // It handles asynchronous writing of streaming response chunks to a file.
 type FileStreamingLogWriter struct {
-	// file is the file where log data is written.
-	file *os.File
-
-	// chunkChan is a channel for receiving response chunks to write.
-	chunkChan chan []byte
-
-	// closeChan is a channel for signaling when the writer is closed.
-	closeChan chan struct{}
-
-	// errorChan is a channel for reporting errors during writing.
-	errorChan chan error
-
-	// statusWritten indicates whether the response status has been written.
+	file          *os.File
+	chunkChan     chan []byte
+	closeChan     chan struct{}
+	errorChan     chan error
 	statusWritten bool
 }
 
@@ -636,6 +635,7 @@ func (w *FileStreamingLogWriter) WriteChunkAsync(chunk []byte) {
 // Parameters:
 //   - status: The response status code
 //   - headers: The response headers
+//
 // Returns:
 //   - error: An error if writing fails, nil otherwise
 func (w *FileStreamingLogWriter) WriteStatus(status int, headers map[string][]string) error {
@@ -708,6 +708,7 @@ func (w *NoOpStreamingLogWriter) WriteChunkAsync(_ []byte) {}
 // Parameters:
 //   - status: The response status code (ignored)
 //   - headers: The response headers (ignored)
+//
 // Returns:
 //   - error: Always returns nil
 func (w *NoOpStreamingLogWriter) WriteStatus(_ int, _ map[string][]string) error {

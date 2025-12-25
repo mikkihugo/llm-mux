@@ -25,65 +25,32 @@ import (
 )
 
 // Service wraps the proxy server lifecycle so external programs can embed the CLI proxy.
-// It manages the complete lifecycle including authentication, file watching, HTTP server,
-// and integration with various AI service providers.
 type Service struct {
-	// cfg holds the current application configuration.
-	cfg *config.Config
-
-	// cfgMu protects concurrent access to the configuration.
-	cfgMu sync.RWMutex
-
-	// configPath is the path to the configuration file.
+	cfg        *config.Config
+	cfgMu      sync.RWMutex
 	configPath string
 
-	// tokenProvider handles loading token-based clients.
-	tokenProvider TokenClientProvider
-
-	// apiKeyProvider handles loading API key-based clients.
+	tokenProvider  TokenClientProvider
 	apiKeyProvider APIKeyClientProvider
-
-	// watcherFactory creates file watcher instances.
 	watcherFactory WatcherFactory
+	hooks          Hooks
+	serverOptions  []api.ServerOption
 
-	// hooks provides lifecycle callbacks.
-	hooks Hooks
-
-	// serverOptions contains additional server configuration options.
-	serverOptions []api.ServerOption
-
-	// server is the HTTP API server instance.
-	server *api.Server
-
-	// serverErr channel for server startup/shutdown errors.
+	server    *api.Server
 	serverErr chan error
 
-	// watcher handles file system monitoring.
-	watcher *WatcherWrapper
-
-	// watcherCancel cancels the watcher context.
+	watcher       *WatcherWrapper
 	watcherCancel context.CancelFunc
 
-	// authUpdates channel for authentication updates.
-	authUpdates chan watcher.AuthUpdate
-
-	// authQueueStop cancels the auth update queue processing.
+	authUpdates   chan watcher.AuthUpdate
 	authQueueStop context.CancelFunc
 
-	// authManager handles authentication operations.
-	authManager *sdkAuth.Manager
-
-	// accessManager handles request authentication providers.
+	authManager   *sdkAuth.Manager
 	accessManager *sdkaccess.Manager
+	coreManager   *coreauth.Manager
 
-	// coreManager handles core authentication and execution.
-	coreManager *coreauth.Manager
-
-	// shutdownOnce ensures shutdown is called only once.
 	shutdownOnce sync.Once
-
-	// wsGateway manages websocket Gemini providers.
-	wsGateway *wsrelay.Manager
+	wsGateway    *wsrelay.Manager
 }
 
 // RegisterUsagePlugin registers a usage plugin on the global usage manager.
@@ -593,7 +560,7 @@ func (s *Service) registerModelsForAuth(a *coreauth.Auth) {
 	if s == nil {
 		return
 	}
-	registerModelsForAuth(a, s.cfg)
+	registerModelsForAuth(a, s.cfg, s.wsGateway)
 }
 
 func applyExcludedModels(models []*ModelInfo, excluded []string) []*ModelInfo {

@@ -23,6 +23,7 @@ import (
 //   - cfg: The application configuration
 //   - auth: The authentication information
 //   - timeout: The client timeout (0 means no timeout)
+//
 // Returns:
 //   - *http.Client: An HTTP client with configured proxy or transport
 func newProxyAwareHTTPClient(ctx context.Context, cfg *config.Config, auth *cliproxyauth.Auth, timeout time.Duration) *http.Client {
@@ -65,6 +66,7 @@ func newProxyAwareHTTPClient(ctx context.Context, cfg *config.Config, auth *clip
 // It supports SOCKS5, HTTP, and HTTPS proxy protocols.
 // Parameters:
 //   - proxyURL: The proxy URL string (e.g., "socks5://user:pass@host:port", "http://host:port")
+//
 // Returns:
 //   - *http.Transport: A configured transport, or nil if the proxy URL is invalid
 func buildProxyTransport(proxyURL string) *http.Transport {

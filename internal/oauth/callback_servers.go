@@ -13,8 +13,8 @@ import (
 
 // ProviderConfig defines the callback configuration for an OAuth provider.
 type ProviderConfig struct {
-	Name        string // Provider identifier (claude, gemini, codex, etc.)
-	Port        int    // Fixed callback port registered with OAuth provider
+	Name         string // Provider identifier (claude, gemini, codex, etc.)
+	Port         int    // Fixed callback port registered with OAuth provider
 	CallbackPath string // Path component of callback URL
 }
 
@@ -22,38 +22,38 @@ type ProviderConfig struct {
 // These CANNOT be changed - they are registered with OAuth providers.
 var ProviderConfigs = map[string]ProviderConfig{
 	"claude": {
-		Name:        "claude",
-		Port:        54545,
+		Name:         "claude",
+		Port:         54545,
 		CallbackPath: "/callback",
 	},
 	"anthropic": {
-		Name:        "anthropic",
-		Port:        54545,
+		Name:         "anthropic",
+		Port:         54545,
 		CallbackPath: "/callback",
 	},
 	"codex": {
-		Name:        "codex",
-		Port:        1455,
+		Name:         "codex",
+		Port:         1455,
 		CallbackPath: "/auth/callback",
 	},
 	"gemini": {
-		Name:        "gemini",
-		Port:        8085,
+		Name:         "gemini",
+		Port:         8085,
 		CallbackPath: "/oauth2callback",
 	},
 	"gemini-cli": {
-		Name:        "gemini-cli",
-		Port:        8085,
+		Name:         "gemini-cli",
+		Port:         8085,
 		CallbackPath: "/oauth2callback",
 	},
 	"iflow": {
-		Name:        "iflow",
-		Port:        11451,
+		Name:         "iflow",
+		Port:         11451,
 		CallbackPath: "/oauth2callback",
 	},
 	"antigravity": {
-		Name:        "antigravity",
-		Port:        51121,
+		Name:         "antigravity",
+		Port:         51121,
 		CallbackPath: "/oauth-callback",
 	},
 }

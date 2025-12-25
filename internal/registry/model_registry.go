@@ -16,73 +16,53 @@ import (
 
 // ModelInfo represents information about an available model
 type ModelInfo struct {
-	// ID is the unique identifier for the model
-	ID string `json:"id"`
-	// Object type for the model (typically "model")
-	Object string `json:"object"`
-	// Created timestamp when the model was created
-	Created int64 `json:"created"`
-	// OwnedBy indicates the organization that owns the model
-	OwnedBy string `json:"owned_by"`
-	// Type indicates the model type (e.g., "claude", "gemini", "openai")
-	Type string `json:"type"`
-	// CanonicalID is the common name used for cross-provider routing (empty = same as ID)
-	CanonicalID string `json:"canonical_id,omitempty"`
-	// DisplayName is the human-readable name for the model
-	DisplayName string `json:"display_name,omitempty"`
-	// Name is used for Gemini-style model names
-	Name string `json:"name,omitempty"`
-	// Version is the model version
-	Version string `json:"version,omitempty"`
-	// Description provides detailed information about the model
-	Description string `json:"description,omitempty"`
-	// InputTokenLimit is the maximum input token limit
-	InputTokenLimit int `json:"inputTokenLimit,omitempty"`
-	// OutputTokenLimit is the maximum output token limit
-	OutputTokenLimit int `json:"outputTokenLimit,omitempty"`
-	// SupportedGenerationMethods lists supported generation methods
+	ID                         string   `json:"id"`
+	Object                     string   `json:"object"`
+	Created                    int64    `json:"created"`
+	OwnedBy                    string   `json:"owned_by"`
+	Type                       string   `json:"type"`
+	CanonicalID                string   `json:"canonical_id,omitempty"`
+	DisplayName                string   `json:"display_name,omitempty"`
+	Name                       string   `json:"name,omitempty"`
+	Version                    string   `json:"version,omitempty"`
+	Description                string   `json:"description,omitempty"`
+	InputTokenLimit            int      `json:"inputTokenLimit,omitempty"`
+	OutputTokenLimit           int      `json:"outputTokenLimit,omitempty"`
 	SupportedGenerationMethods []string `json:"supportedGenerationMethods,omitempty"`
-	// ContextLength is the context window size
-	ContextLength int `json:"context_length,omitempty"`
-	// MaxCompletionTokens is the maximum completion tokens
-	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
-	// SupportedParameters lists supported parameters
-	SupportedParameters []string `json:"supported_parameters,omitempty"`
+	ContextLength              int      `json:"context_length,omitempty"`
+	MaxCompletionTokens        int      `json:"max_completion_tokens,omitempty"`
+	SupportedParameters        []string `json:"supported_parameters,omitempty"`
 
 	// Thinking holds provider-specific reasoning/thinking budget capabilities.
 	Thinking *ThinkingSupport `json:"thinking,omitempty"`
 
 	// Priority controls routing order (lower = higher priority, 0 treated as 1).
 	Priority int `json:"priority,omitempty"`
+
+	// UpstreamName is the actual model name used when sending requests to the provider.
+	// If set, requests for this model ID will use UpstreamName in the upstream request.
+	UpstreamName string `json:"-"`
+
+	// Hidden marks the model as excluded from model listings.
+	Hidden bool `json:"-"`
 }
 
-// ThinkingSupport describes a model family's supported internal reasoning budget range.
-// Values are interpreted in provider-native token units.
+// ThinkingSupport describes a model's supported internal reasoning budget range.
 type ThinkingSupport struct {
-	// Min is the minimum allowed thinking budget (inclusive).
-	Min int `json:"min,omitempty"`
-	// Max is the maximum allowed thinking budget (inclusive).
-	Max int `json:"max,omitempty"`
-	// ZeroAllowed indicates whether 0 is a valid value (to disable thinking).
-	ZeroAllowed bool `json:"zero_allowed,omitempty"`
-	// DynamicAllowed indicates whether -1 is a valid value (dynamic thinking budget).
+	Min            int  `json:"min,omitempty"`
+	Max            int  `json:"max,omitempty"`
+	ZeroAllowed    bool `json:"zero_allowed,omitempty"`
 	DynamicAllowed bool `json:"dynamic_allowed,omitempty"`
 }
 
 // ModelRegistration tracks a model's availability
 type ModelRegistration struct {
-	// Info contains the model metadata
-	Info *ModelInfo
-	// Count is the number of active clients that can provide this model
-	Count int
-	// LastUpdated tracks when this registration was last modified
-	LastUpdated time.Time
-	// QuotaExceededClients tracks which clients have exceeded quota for this model
+	Info                 *ModelInfo
+	Count                int
+	LastUpdated          time.Time
 	QuotaExceededClients map[string]*time.Time
-	// Providers tracks available clients grouped by provider identifier
-	Providers map[string]int
-	// SuspendedClients tracks temporarily disabled clients keyed by client ID
-	SuspendedClients map[string]string
+	Providers            map[string]int
+	SuspendedClients     map[string]string
 }
 
 // ModelRegistry manages the global registry of available models

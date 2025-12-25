@@ -7,6 +7,7 @@
 //   - Client sends schema with "target_file" parameter
 //   - Model returns tool call with "path" or "file_path" instead
 //   - Client rejects the response: "missing required argument target_file"
+//
 // This causes tool call failures even though the model's intent was correct.
 // # Solution
 // Context-dependent normalization: we extract the expected parameter schema
@@ -17,6 +18,7 @@
 //   - Safe: only renames parameters if a clear match exists in the schema
 //   - Efficient: uses gjson for fast schema extraction without full JSON parsing
 //   - Recursive: handles nested objects and arrays at any depth
+//
 // # Current Usage
 // Currently enabled only for the Antigravity provider, which exhibits this
 // parameter naming issue when proxying through Gemini CLI.
@@ -34,9 +36,11 @@
 //  4. Bidirectional Support: While currently used for response normalization,
 //     the same approach could normalize requests TO providers that expect
 //     different parameter names than what the client sends.
+//
 // To enable for other providers, use NewAntigravityStreamState() pattern in
 // the respective executor, or create a similar helper function.
 // # Usage Example
+//
 //	// In executor, create context from original request:
 //	tools := gjson.GetBytes(originalRequest, "tools").Array()
 //	schemaCtx := ir.NewToolSchemaContextFromGJSON(tools)

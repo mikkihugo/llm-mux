@@ -18,6 +18,7 @@ import (
 //   - path: The current path in the JSON structure (empty string for root)
 //   - field: The field name to search for
 //   - paths: Pointer to a slice where found paths will be stored
+//
 // The function works recursively, building dot-notation paths to each occurrence
 // of the specified field throughout the JSON structure.
 func Walk(value gjson.Result, path, field string, paths *[]string) {
@@ -48,9 +49,11 @@ func Walk(value gjson.Result, path, field string, paths *[]string) {
 //   - jsonStr: The JSON string to modify
 //   - oldKeyPath: The dot-notation path to the key that should be renamed
 //   - newKeyPath: The dot-notation path where the value should be moved to
+//
 // Returns:
 //   - string: The modified JSON string with the key renamed
 //   - error: An error if the operation fails
+//
 // The function performs the rename in two steps:
 // 1. Sets the value at the new key path
 // 2. Deletes the old key path
@@ -87,8 +90,10 @@ func DeleteKey(jsonStr, keyName string) string {
 // RFC 8259-compliant JSON by converting those single-quoted strings to
 // double-quoted strings with proper escaping.
 // Examples:
+//
 //	{'a': 1, 'b': '2'}      => {"a": 1, "b": "2"}
 //	{"t": 'He said "hi"'} => {"t": "He said \"hi\""}
+//
 // Rules:
 //   - Existing double-quoted JSON strings are preserved as-is.
 //   - Single-quoted strings are converted to double-quoted strings.

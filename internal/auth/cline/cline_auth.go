@@ -48,6 +48,7 @@ type ClineAuth struct {
 // It initializes the HTTP client with proxy settings from the configuration.
 // Parameters:
 //   - cfg: The application configuration containing proxy settings
+//
 // Returns:
 //   - *ClineAuth: A new Cline authentication service instance
 func NewClineAuth(cfg *config.Config) *ClineAuth {
@@ -63,6 +64,7 @@ func NewClineAuth(cfg *config.Config) *ClineAuth {
 // Parameters:
 //   - ctx: The context for the request
 //   - refreshToken: The refresh token to use for getting new access token
+//
 // Returns:
 //   - *ClineTokenData: The new token data with updated access token
 //   - error: An error if token refresh fails
@@ -145,6 +147,7 @@ func (c *ClineAuth) RefreshTokens(ctx context.Context, refreshToken string) (*Cl
 //   - ctx: The context for the request
 //   - refreshToken: The refresh token to use
 //   - maxRetries: The maximum number of retry attempts
+//
 // Returns:
 //   - *ClineTokenData: The refreshed token data
 //   - error: An error if all retry attempts fail
@@ -159,6 +162,7 @@ func (c *ClineAuth) RefreshTokensWithRetry(ctx context.Context, refreshToken str
 // suitable for persistence and later use.
 // Parameters:
 //   - tokenData: The token data to store
+//
 // Returns:
 //   - *ClineTokenStorage: A new token storage instance
 func (c *ClineAuth) CreateTokenStorage(tokenData *ClineTokenData) *ClineTokenStorage {
@@ -195,6 +199,7 @@ func (c *ClineAuth) UpdateTokenStorage(storage *ClineTokenStorage, tokenData *Cl
 // them 5 minutes before expiration to ensure continuous availability.
 // Parameters:
 //   - expireTime: The expiration timestamp in RFC3339 format
+//
 // Returns:
 //   - bool: true if refresh is needed, false otherwise
 //   - time.Duration: time until expiration

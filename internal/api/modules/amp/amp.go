@@ -46,6 +46,7 @@ type AmpModule struct {
 // New creates a new Amp routing module with the given options.
 // This is the preferred constructor using the Option pattern.
 // Example:
+//
 //	ampModule := amp.New(
 //	    amp.WithAccessManager(accessManager),
 //	    amp.WithAuthMiddleware(authMiddleware),
@@ -60,7 +61,6 @@ func New(opts ...Option) *AmpModule {
 	}
 	return m
 }
-
 
 // WithSecretSource sets a custom secret source for the module.
 func WithSecretSource(source SecretSource) Option {

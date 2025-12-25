@@ -96,9 +96,9 @@ func CategorizeHTTPStatus(statusCode int) ErrorCategory {
 	case http.StatusTooManyRequests: // 429
 		return CategoryQuotaError
 	case http.StatusInternalServerError, // 500
-		http.StatusBadGateway,    // 502
+		http.StatusBadGateway,         // 502
 		http.StatusServiceUnavailable, // 503
-		http.StatusGatewayTimeout: // 504
+		http.StatusGatewayTimeout:     // 504
 		return CategoryTransient
 	default:
 		if statusCode >= 400 && statusCode < 500 {

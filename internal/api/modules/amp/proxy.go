@@ -171,7 +171,6 @@ func isStreamingResponse(resp *http.Response) bool {
 	return false
 }
 
-
 // filterBetaFeatures removes a specific beta feature from comma-separated list
 func filterBetaFeatures(header, featureToRemove string) string {
 	features := strings.Split(header, ",")

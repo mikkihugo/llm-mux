@@ -5,7 +5,7 @@ import "time"
 // KiroCredentials represents the authentication tokens for Kiro (Amazon Q).
 // It stores the access and refresh tokens along with expiration info and region configuration.
 type KiroCredentials struct {
-	Type         string    `json:"type"`                    // Provider type identifier for watcher detection
+	Type         string    `json:"type"` // Provider type identifier for watcher detection
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
 	ExpiresAt    time.Time `json:"expires_at"`

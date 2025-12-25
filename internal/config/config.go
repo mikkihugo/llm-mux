@@ -19,102 +19,52 @@ import (
 // Config represents the application's configuration, loaded from a YAML file.
 type Config struct {
 	config.SDKConfig `yaml:",inline"`
-	// Port is the network port on which the API server will listen.
-	Port int `yaml:"port" json:"-"`
-
-	// TLS config controls HTTPS server settings.
-	TLS TLSConfig `yaml:"tls" json:"tls"`
-
-	// RemoteManagement nests management-related options under 'remote-management'.
+	Port             int              `yaml:"port" json:"-"`
+	TLS              TLSConfig        `yaml:"tls" json:"tls"`
 	RemoteManagement RemoteManagement `yaml:"remote-management" json:"-"`
+	AuthDir          string           `yaml:"auth-dir" json:"-"`
+	Debug            bool             `yaml:"debug" json:"debug"`
+	LoggingToFile    bool             `yaml:"logging-to-file" json:"logging-to-file"`
 
-	// AuthDir is the directory where authentication token files are stored.
-	AuthDir string `yaml:"auth-dir" json:"-"`
+	UsageStatisticsEnabled bool             `yaml:"usage-statistics-enabled" json:"usage-statistics-enabled"`
+	UsagePersistence       UsagePersistence `yaml:"usage-persistence" json:"usage-persistence"`
+	DisableCooling         bool             `yaml:"disable-cooling" json:"disable-cooling"`
+	RequestRetry           int              `yaml:"request-retry" json:"request-retry"`
+	MaxRetryInterval       int              `yaml:"max-retry-interval" json:"max-retry-interval"`
+	QuotaExceeded          QuotaExceeded    `yaml:"quota-exceeded" json:"quota-exceeded"`
 
-	// Debug enables or disables debug-level logging and other debug features.
-	Debug bool `yaml:"debug" json:"debug"`
-
-	// LoggingToFile controls whether application logs are written to rotating files or stdout.
-	LoggingToFile bool `yaml:"logging-to-file" json:"logging-to-file"`
-
-	// UsageStatisticsEnabled toggles in-memory usage aggregation; when false, usage data is discarded.
-	UsageStatisticsEnabled bool `yaml:"usage-statistics-enabled" json:"usage-statistics-enabled"`
-
-	// UsagePersistence defines SQLite persistence settings for usage statistics.
-	UsagePersistence UsagePersistence `yaml:"usage-persistence" json:"usage-persistence"`
-
-	// DisableCooling disables quota cooldown scheduling when true.
-	DisableCooling bool `yaml:"disable-cooling" json:"disable-cooling"`
-
-	// RequestRetry defines the retry times when the request failed.
-	RequestRetry int `yaml:"request-retry" json:"request-retry"`
-	// MaxRetryInterval defines the maximum wait time in seconds before retrying a cooled-down credential.
-	MaxRetryInterval int `yaml:"max-retry-interval" json:"max-retry-interval"`
-
-	// QuotaExceeded defines the behavior when a quota is exceeded.
-	QuotaExceeded QuotaExceeded `yaml:"quota-exceeded" json:"quota-exceeded"`
-
-	// WebsocketAuth enables or disables authentication for the WebSocket API.
 	WebsocketAuth bool `yaml:"ws-auth" json:"ws-auth"`
+	DisableAuth   bool `yaml:"disable-auth" json:"disable-auth"`
 
-	// DisableAuth disables API key authentication for all endpoints (Ollama compatibility mode).
-	DisableAuth bool `yaml:"disable-auth" json:"disable-auth"`
-
-	// GeminiKey defines Gemini API key configurations with optional routing overrides.
-	GeminiKey []GeminiKey `yaml:"gemini-api-key" json:"gemini-api-key"`
-
-	// Codex defines a list of Codex API key configurations as specified in the YAML configuration file.
-	CodexKey []CodexKey `yaml:"codex-api-key" json:"codex-api-key"`
-
-	// ClaudeKey defines a list of Claude API key configurations as specified in the YAML configuration file.
-	ClaudeKey []ClaudeKey `yaml:"claude-api-key" json:"claude-api-key"`
-
-	// OpenAICompatibility defines OpenAI API compatibility configurations for external providers.
+	GeminiKey           []GeminiKey           `yaml:"gemini-api-key" json:"gemini-api-key"`
+	CodexKey            []CodexKey            `yaml:"codex-api-key" json:"codex-api-key"`
+	ClaudeKey           []ClaudeKey           `yaml:"claude-api-key" json:"claude-api-key"`
 	OpenAICompatibility []OpenAICompatibility `yaml:"openai-compatibility" json:"openai-compatibility"`
+	VertexCompatAPIKey  []VertexCompatKey     `yaml:"vertex-api-key" json:"vertex-api-key"`
 
-	// VertexCompatAPIKey defines Vertex AI-compatible API key configurations for third-party providers.
-	// Used for services that use Vertex AI-style paths but with simple API key authentication.
-	VertexCompatAPIKey []VertexCompatKey `yaml:"vertex-api-key" json:"vertex-api-key"`
-
-	// AmpCode contains Amp CLI upstream configuration, management restrictions, and model mappings.
-	AmpCode AmpCode `yaml:"ampcode" json:"ampcode"`
-
-	// OAuthExcludedModels defines per-provider global model exclusions applied to OAuth/file-backed auth entries.
+	AmpCode             AmpCode             `yaml:"ampcode" json:"ampcode"`
 	OAuthExcludedModels map[string][]string `yaml:"oauth-excluded-models,omitempty" json:"oauth-excluded-models,omitempty"`
+	Payload             PayloadConfig       `yaml:"payload" json:"payload"`
 
-	// Payload defines default and override rules for provider payload parameters.
-	Payload PayloadConfig `yaml:"payload" json:"payload"`
-
-	// UseCanonicalTranslator enables the new canonical IR translator architecture.
-	// When true, requests are converted through a unified intermediate representation (IR)
-	// before being translated to provider-specific formats.
-	// Default: true (canonical translator is now the primary path)
+	// UseCanonicalTranslator enables the unified IR translator architecture (default: true).
 	UseCanonicalTranslator bool `yaml:"use-canonical-translator" json:"use-canonical-translator" default:"true"`
 }
 
 // TLSConfig holds HTTPS server settings.
 type TLSConfig struct {
-	// Enable toggles HTTPS server mode.
-	Enable bool `yaml:"enable" json:"enable"`
-	// Cert is the path to the TLS certificate file.
-	Cert string `yaml:"cert" json:"cert"`
-	// Key is the path to the TLS private key file.
-	Key string `yaml:"key" json:"key"`
+	Enable bool   `yaml:"enable" json:"enable"`
+	Cert   string `yaml:"cert" json:"cert"`
+	Key    string `yaml:"key" json:"key"`
 }
 
 // RemoteManagement holds management API configuration under 'remote-management'.
 type RemoteManagement struct {
-	// AllowRemote toggles remote (non-localhost) access to management API.
 	AllowRemote bool `yaml:"allow-remote"`
 }
 
 // QuotaExceeded defines the behavior when API quota limits are exceeded.
-// It provides configuration options for automatic failover mechanisms.
 type QuotaExceeded struct {
-	// SwitchProject indicates whether to automatically switch to another project when a quota is exceeded.
-	SwitchProject bool `yaml:"switch-project" json:"switch-project"`
-
-	// SwitchPreviewModel indicates whether to automatically switch to a preview model when a quota is exceeded.
+	SwitchProject      bool `yaml:"switch-project" json:"switch-project"`
 	SwitchPreviewModel bool `yaml:"switch-preview-model" json:"switch-preview-model"`
 }
 
@@ -148,156 +98,84 @@ type AmpModelMapping struct {
 	To string `yaml:"to" json:"to"`
 }
 
-// AmpCode groups Amp CLI integration settings including upstream routing,
-// optional overrides, management route restrictions, and model fallback mappings.
+// AmpCode groups Amp CLI integration settings including upstream routing and model fallback mappings.
 type AmpCode struct {
-	// UpstreamURL defines the upstream Amp control plane used for non-provider calls.
-	UpstreamURL string `yaml:"upstream-url" json:"upstream-url"`
-
-	// UpstreamAPIKey optionally overrides the Authorization header when proxying Amp upstream calls.
-	UpstreamAPIKey string `yaml:"upstream-api-key" json:"upstream-api-key"`
-
-	// RestrictManagementToLocalhost restricts Amp management routes (/api/user, /api/threads, etc.)
-	// to only accept connections from localhost (127.0.0.1, ::1). When true, prevents drive-by
-	// browser attacks and remote access to management endpoints. Default: true (recommended).
-	RestrictManagementToLocalhost bool `yaml:"restrict-management-to-localhost" json:"restrict-management-to-localhost"`
-
-	// ModelMappings defines model name mappings for Amp CLI requests.
-	// When Amp requests a model that isn't available locally, these mappings
-	// allow routing to an alternative model that IS available.
-	ModelMappings []AmpModelMapping `yaml:"model-mappings" json:"model-mappings"`
+	UpstreamURL                   string            `yaml:"upstream-url" json:"upstream-url"`
+	UpstreamAPIKey                string            `yaml:"upstream-api-key" json:"upstream-api-key"`
+	RestrictManagementToLocalhost bool              `yaml:"restrict-management-to-localhost" json:"restrict-management-to-localhost"`
+	ModelMappings                 []AmpModelMapping `yaml:"model-mappings" json:"model-mappings"`
 }
 
 // PayloadConfig defines default and override parameter rules applied to provider payloads.
 type PayloadConfig struct {
-	// Default defines rules that only set parameters when they are missing in the payload.
-	Default []PayloadRule `yaml:"default" json:"default"`
-	// Override defines rules that always set parameters, overwriting any existing values.
+	Default  []PayloadRule `yaml:"default" json:"default"`
 	Override []PayloadRule `yaml:"override" json:"override"`
 }
 
 // PayloadRule describes a single rule targeting a list of models with parameter updates.
 type PayloadRule struct {
-	// Models lists model entries with name pattern and protocol constraint.
 	Models []PayloadModelRule `yaml:"models" json:"models"`
-	// Params maps JSON paths (gjson/sjson syntax) to values written into the payload.
-	Params map[string]any `yaml:"params" json:"params"`
+	Params map[string]any     `yaml:"params" json:"params"`
 }
 
 // PayloadModelRule ties a model name pattern to a specific translator protocol.
 type PayloadModelRule struct {
-	// Name is the model name or wildcard pattern (e.g., "gpt-*", "*-5", "gemini-*-pro").
-	Name string `yaml:"name" json:"name"`
-	// Protocol restricts the rule to a specific translator format (e.g., "gemini", "responses").
+	Name     string `yaml:"name" json:"name"`
 	Protocol string `yaml:"protocol" json:"protocol"`
 }
 
-// ClaudeKey represents the configuration for a Claude API key,
-// including the API key itself and an optional base URL for the API endpoint.
+// ClaudeKey represents the configuration for a Claude API key.
 type ClaudeKey struct {
-	// APIKey is the authentication key for accessing Claude API services.
-	APIKey string `yaml:"api-key" json:"api-key"`
-
-	// BaseURL is the base URL for the Claude API endpoint.
-	// If empty, the default Claude API URL will be used.
-	BaseURL string `yaml:"base-url" json:"base-url"`
-
-	// ProxyURL overrides the global proxy setting for this API key if provided.
-	ProxyURL string `yaml:"proxy-url" json:"proxy-url"`
-
-	// Models defines upstream model names and aliases for request routing.
-	Models []ClaudeModel `yaml:"models" json:"models"`
-
-	// Headers optionally adds extra HTTP headers for requests sent with this key.
-	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-
-	// ExcludedModels lists model IDs that should be excluded for this provider.
-	ExcludedModels []string `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
+	APIKey         string            `yaml:"api-key" json:"api-key"`
+	BaseURL        string            `yaml:"base-url" json:"base-url"`
+	ProxyURL       string            `yaml:"proxy-url" json:"proxy-url"`
+	Models         []ClaudeModel     `yaml:"models" json:"models"`
+	Headers        map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	ExcludedModels []string          `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
 }
 
 // ClaudeModel describes a mapping between an alias and the actual upstream model name.
 type ClaudeModel struct {
-	// Name is the upstream model identifier used when issuing requests.
-	Name string `yaml:"name" json:"name"`
-
-	// Alias is the client-facing model name that maps to Name.
+	Name  string `yaml:"name" json:"name"`
 	Alias string `yaml:"alias" json:"alias"`
 }
 
-// CodexKey represents the configuration for a Codex API key,
-// including the API key itself and an optional base URL for the API endpoint.
+// CodexKey represents the configuration for a Codex API key.
 type CodexKey struct {
-	// APIKey is the authentication key for accessing Codex API services.
-	APIKey string `yaml:"api-key" json:"api-key"`
-
-	// BaseURL is the base URL for the Codex API endpoint.
-	// If empty, the default Codex API URL will be used.
-	BaseURL string `yaml:"base-url" json:"base-url"`
-
-	// ProxyURL overrides the global proxy setting for this API key if provided.
-	ProxyURL string `yaml:"proxy-url" json:"proxy-url"`
-
-	// Headers optionally adds extra HTTP headers for requests sent with this key.
-	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-
-	// ExcludedModels lists model IDs that should be excluded for this provider.
-	ExcludedModels []string `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
+	APIKey         string            `yaml:"api-key" json:"api-key"`
+	BaseURL        string            `yaml:"base-url" json:"base-url"`
+	ProxyURL       string            `yaml:"proxy-url" json:"proxy-url"`
+	Headers        map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	ExcludedModels []string          `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
 }
 
-// GeminiKey represents the configuration for a Gemini API key,
-// including optional overrides for upstream base URL, proxy routing, and headers.
+// GeminiKey represents the configuration for a Gemini API key.
 type GeminiKey struct {
-	// APIKey is the authentication key for accessing Gemini API services.
-	APIKey string `yaml:"api-key" json:"api-key"`
-
-	// BaseURL optionally overrides the Gemini API endpoint.
-	BaseURL string `yaml:"base-url,omitempty" json:"base-url,omitempty"`
-
-	// ProxyURL optionally overrides the global proxy for this API key.
-	ProxyURL string `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`
-
-	// Headers optionally adds extra HTTP headers for requests sent with this key.
-	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-
-	// ExcludedModels lists model IDs that should be excluded for this provider.
-	ExcludedModels []string `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
+	APIKey         string            `yaml:"api-key" json:"api-key"`
+	BaseURL        string            `yaml:"base-url,omitempty" json:"base-url,omitempty"`
+	ProxyURL       string            `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`
+	Headers        map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	ExcludedModels []string          `yaml:"excluded-models,omitempty" json:"excluded-models,omitempty"`
 }
 
-// OpenAICompatibility represents the configuration for OpenAI API compatibility
-// with external providers, allowing model aliases to be routed through OpenAI API format.
+// OpenAICompatibility represents the configuration for OpenAI API compatibility with external providers.
 type OpenAICompatibility struct {
-	// Name is the identifier for this OpenAI compatibility configuration.
-	Name string `yaml:"name" json:"name"`
-
-	// BaseURL is the base URL for the external OpenAI-compatible API endpoint.
-	BaseURL string `yaml:"base-url" json:"base-url"`
-
-	// APIKeyEntries defines API keys with optional per-key proxy configuration.
+	Name          string                      `yaml:"name" json:"name"`
+	BaseURL       string                      `yaml:"base-url" json:"base-url"`
 	APIKeyEntries []OpenAICompatibilityAPIKey `yaml:"api-key-entries,omitempty" json:"api-key-entries,omitempty"`
-
-	// Models defines the model configurations including aliases for routing.
-	Models []OpenAICompatibilityModel `yaml:"models" json:"models"`
-
-	// Headers optionally adds extra HTTP headers for requests sent to this provider.
-	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Models        []OpenAICompatibilityModel  `yaml:"models" json:"models"`
+	Headers       map[string]string           `yaml:"headers,omitempty" json:"headers,omitempty"`
 }
 
 // OpenAICompatibilityAPIKey represents an API key configuration with optional proxy setting.
 type OpenAICompatibilityAPIKey struct {
-	// APIKey is the authentication key for accessing the external API services.
-	APIKey string `yaml:"api-key" json:"api-key"`
-
-	// ProxyURL overrides the global proxy setting for this API key if provided.
+	APIKey   string `yaml:"api-key" json:"api-key"`
 	ProxyURL string `yaml:"proxy-url,omitempty" json:"proxy-url,omitempty"`
 }
 
-// OpenAICompatibilityModel represents a model configuration for OpenAI compatibility,
-// including the actual model name and its alias for API routing.
+// OpenAICompatibilityModel represents a model configuration for OpenAI compatibility.
 type OpenAICompatibilityModel struct {
-	// Name is the actual model name used by the external provider.
-	Name string `yaml:"name" json:"name"`
-
-	// Alias is the model name alias that clients will use to reference this model.
+	Name  string `yaml:"name" json:"name"`
 	Alias string `yaml:"alias" json:"alias"`
 }
 

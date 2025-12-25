@@ -18,21 +18,13 @@ import (
 )
 
 // ClineTokenStorage stores OAuth2 token information for Cline API authentication.
-// It maintains compatibility with the existing auth system while adding Cline-specific fields
-// for managing access tokens, refresh tokens, and user account information.
 type ClineTokenStorage struct {
-	// AccessToken is the JWT token used for authenticating API requests
-	AccessToken string `json:"access_token"`
-	// RefreshToken is used to obtain new access tokens when the current one expires
+	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
-	// LastRefresh is the timestamp of the last token refresh operation
-	LastRefresh string `json:"last_refresh"`
-	// Email is the Cline account email address associated with this token
-	Email string `json:"email"`
-	// Type indicates the authentication provider type, always "cline" for this storage
-	Type string `json:"type"`
-	// Expire is the timestamp when the current access token expires
-	Expire string `json:"expired"`
+	LastRefresh  string `json:"last_refresh"`
+	Email        string `json:"email"`
+	Type         string `json:"type"`
+	Expire       string `json:"expired"`
 }
 
 // SaveTokenToFile serializes the Cline token storage to a JSON file.
@@ -40,6 +32,7 @@ type ClineTokenStorage struct {
 // data in JSON format to the specified file path for persistent storage.
 // Parameters:
 //   - authFilePath: The full path where the token file should be saved
+//
 // Returns:
 //   - error: An error if the operation fails, nil otherwise
 func (ts *ClineTokenStorage) SaveTokenToFile(authFilePath string) error {

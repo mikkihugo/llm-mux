@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nghyane/llm-mux/internal/config"
+	"github.com/nghyane/llm-mux/internal/registry"
 	"github.com/nghyane/llm-mux/internal/translator/from_ir"
 	"github.com/nghyane/llm-mux/internal/util"
 	cliproxyauth "github.com/nghyane/llm-mux/sdk/cliproxy/auth"
@@ -32,10 +33,7 @@ const (
 )
 
 // GeminiExecutor is a stateless executor for the official Gemini API using API keys.
-// It handles both API key and OAuth bearer token authentication, supporting both
-// regular and streaming requests to the Google Generative Language API.
 type GeminiExecutor struct {
-	// cfg holds the application configuration.
 	cfg *config.Config
 }
 
@@ -451,4 +449,28 @@ func applyGeminiHeaders(req *http.Request, auth *cliproxyauth.Auth) {
 		attrs = auth.Attributes
 	}
 	util.ApplyCustomHeadersFromAttrs(req, attrs)
+}
+
+// =============================================================================
+// Dynamic Model Fetching
+// =============================================================================
+
+// FetchGeminiModels retrieves available models from the Generative Language API.
+// Uses API key or OAuth bearer token authentication.
+func FetchGeminiModels(ctx context.Context, auth *cliproxyauth.Auth, cfg *config.Config) []*registry.ModelInfo {
+	apiKey, bearer := geminiCreds(auth)
+	if apiKey == "" && bearer == "" {
+		return nil
+	}
+
+	httpClient := newProxyAwareHTTPClient(ctx, cfg, auth, 0)
+
+	fetchCfg := GLAPIFetchConfig{
+		BaseURL:      resolveGeminiBaseURL(auth),
+		APIKey:       apiKey,
+		Bearer:       bearer,
+		ProviderType: "gemini",
+	}
+
+	return FetchGLAPIModels(ctx, httpClient, fetchCfg)
 }

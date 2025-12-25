@@ -14,6 +14,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/misc"
 	"github.com/nghyane/llm-mux/internal/oauth"
+	"github.com/nghyane/llm-mux/internal/registry"
 	"github.com/nghyane/llm-mux/internal/runtime/geminicli"
 	"github.com/nghyane/llm-mux/internal/translator/from_ir"
 	"github.com/nghyane/llm-mux/internal/translator/ir"
@@ -668,4 +669,35 @@ func wrapTokenError(err error) error {
 	}
 	msg := err.Error()
 	return NewStatusError(http.StatusUnauthorized, msg, nil)
+}
+
+// =============================================================================
+// Dynamic Model Fetching
+// =============================================================================
+
+// FetchGeminiCLIModels retrieves available models from Cloud Code Assist.
+// Uses OAuth token authentication.
+func FetchGeminiCLIModels(ctx context.Context, auth *cliproxyauth.Auth, cfg *config.Config) []*registry.ModelInfo {
+	tokenSource, _, err := prepareGeminiCLITokenSource(ctx, cfg, auth)
+	if err != nil {
+		log.Errorf("gemini-cli: failed to prepare token source: %v", err)
+		return nil
+	}
+
+	tok, err := tokenSource.Token()
+	if err != nil {
+		log.Errorf("gemini-cli: failed to get token: %v", err)
+		return nil
+	}
+
+	httpClient := newHTTPClient(ctx, cfg, auth, 0)
+
+	fetchCfg := CloudCodeFetchConfig{
+		BaseURLs:     []string{codeAssistEndpoint},
+		Token:        tok.AccessToken,
+		ProviderType: "gemini-cli",
+		AliasFunc:    func(name string) string { return registry.GeminiUpstreamToID(name, nil) },
+	}
+
+	return FetchCloudCodeModels(ctx, httpClient, fetchCfg)
 }

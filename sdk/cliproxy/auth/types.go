@@ -13,65 +13,37 @@ import (
 
 // Auth encapsulates the runtime state and metadata associated with a single credential.
 type Auth struct {
-	// ID uniquely identifies the auth record across restarts.
-	ID string `json:"id"`
-	// Index is a monotonically increasing runtime identifier used for diagnostics.
-	Index uint64 `json:"-"`
-	// Provider is the upstream provider key (e.g. "gemini", "claude").
-	Provider string `json:"provider"`
-	// FileName stores the relative or absolute path of the backing auth file.
-	FileName string `json:"-"`
-	// Storage holds the token persistence implementation used during login flows.
-	Storage baseauth.TokenStorage `json:"-"`
-	// Label is an optional human readable label for logging.
-	Label string `json:"label,omitempty"`
-	// Status is the lifecycle status managed by the AuthManager.
-	Status Status `json:"status"`
-	// StatusMessage holds a short description for the current status.
-	StatusMessage string `json:"status_message,omitempty"`
-	// Disabled indicates the auth is intentionally disabled by operator.
-	Disabled bool `json:"disabled"`
-	// Unavailable flags transient provider unavailability (e.g. quota exceeded).
-	Unavailable bool `json:"unavailable"`
-	// ProxyURL overrides the global proxy setting for this auth if provided.
-	ProxyURL string `json:"proxy_url,omitempty"`
-	// Attributes stores provider specific metadata needed by executors (immutable configuration).
-	Attributes map[string]string `json:"attributes,omitempty"`
-	// Metadata stores runtime mutable provider state (e.g. tokens, cookies).
-	Metadata map[string]any `json:"metadata,omitempty"`
-	// Quota captures recent quota information for load balancers.
-	Quota QuotaState `json:"quota"`
-	// LastError stores the last failure encountered while executing or refreshing.
-	LastError *Error `json:"last_error,omitempty"`
-	// CreatedAt is the creation timestamp in UTC.
-	CreatedAt time.Time `json:"created_at"`
-	// UpdatedAt is the last modification timestamp in UTC.
-	UpdatedAt time.Time `json:"updated_at"`
-	// LastRefreshedAt records the last successful refresh time in UTC.
-	LastRefreshedAt time.Time `json:"last_refreshed_at"`
-	// NextRefreshAfter is the earliest time a refresh should retrigger.
-	NextRefreshAfter time.Time `json:"next_refresh_after"`
-	// NextRetryAfter is the earliest time a retry should retrigger.
-	NextRetryAfter time.Time `json:"next_retry_after"`
-	// ModelStates tracks per-model runtime availability data.
-	ModelStates map[string]*ModelState `json:"model_states,omitempty"`
-
-	// Runtime carries non-serialisable data used during execution (in-memory only).
-	Runtime any `json:"-"`
-
-	indexAssigned bool `json:"-"`
+	ID               string                 `json:"id"`
+	Index            uint64                 `json:"-"`
+	Provider         string                 `json:"provider"`
+	FileName         string                 `json:"-"`
+	Storage          baseauth.TokenStorage  `json:"-"`
+	Label            string                 `json:"label,omitempty"`
+	Status           Status                 `json:"status"`
+	StatusMessage    string                 `json:"status_message,omitempty"`
+	Disabled         bool                   `json:"disabled"`
+	Unavailable      bool                   `json:"unavailable"`
+	ProxyURL         string                 `json:"proxy_url,omitempty"`
+	Attributes       map[string]string      `json:"attributes,omitempty"`
+	Metadata         map[string]any         `json:"metadata,omitempty"`
+	Quota            QuotaState             `json:"quota"`
+	LastError        *Error                 `json:"last_error,omitempty"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+	LastRefreshedAt  time.Time              `json:"last_refreshed_at"`
+	NextRefreshAfter time.Time              `json:"next_refresh_after"`
+	NextRetryAfter   time.Time              `json:"next_retry_after"`
+	ModelStates      map[string]*ModelState `json:"model_states,omitempty"`
+	Runtime          any                    `json:"-"`
+	indexAssigned    bool                   `json:"-"`
 }
 
 // QuotaState contains limiter tracking data for a credential.
 type QuotaState struct {
-	// Exceeded indicates the credential recently hit a quota error.
-	Exceeded bool `json:"exceeded"`
-	// Reason provides an optional provider specific human readable description.
-	Reason string `json:"reason,omitempty"`
-	// NextRecoverAt is when the credential may become available again.
+	Exceeded      bool      `json:"exceeded"`
+	Reason        string    `json:"reason,omitempty"`
 	NextRecoverAt time.Time `json:"next_recover_at"`
-	// BackoffLevel stores the progressive cooldown exponent used for rate limits.
-	BackoffLevel int `json:"backoff_level,omitempty"`
+	BackoffLevel  int       `json:"backoff_level,omitempty"`
 }
 
 // ModelState captures the execution state for a specific model under an auth entry.

@@ -104,56 +104,33 @@ func WithRequestLoggerFactory(factory func(*config.Config, string) logging.Reque
 }
 
 // Server represents the main API server.
-// It encapsulates the Gin engine, HTTP server, handlers, and configuration.
 type Server struct {
-	// engine is the Gin web framework engine instance.
-	engine *gin.Engine
-
-	// server is the underlying HTTP server.
-	server *http.Server
-
-	// handlers contains the API handlers for processing requests.
+	engine   *gin.Engine
+	server   *http.Server
 	handlers *handlers.BaseAPIHandler
+	cfg      *config.Config
 
-	// cfg holds the current server configuration.
-	cfg *config.Config
-
-	// oldConfigYaml stores a YAML snapshot of the previous configuration for change detection.
-	// This prevents issues when the config object is modified in place by Management API.
+	// oldConfigYaml stores YAML snapshot for change detection (avoids in-place mutation issues).
 	oldConfigYaml []byte
 
-	// accessManager handles request authentication providers.
-	accessManager *sdkaccess.Manager
-
-	// requestLogger is the request logger instance for dynamic configuration updates.
-	requestLogger logging.RequestLogger
-	loggerToggle  func(bool)
-
-	// configFilePath is the absolute path to the YAML config file for persistence.
+	accessManager  *sdkaccess.Manager
+	requestLogger  logging.RequestLogger
+	loggerToggle   func(bool)
 	configFilePath string
+	currentPath    string
 
-	// currentPath is the absolute path to the current working directory.
-	currentPath string
-
-	// wsRoutes tracks registered websocket upgrade paths.
 	wsRouteMu     sync.Mutex
 	wsRoutes      map[string]struct{}
 	wsAuthChanged func(bool, bool)
 	wsAuthEnabled atomic.Bool
 
-	// management handler
-	mgmt *managementHandlers.Handler
-
-	// ampModule is the Amp routing module for model mapping hot-reload
+	mgmt      *managementHandlers.Handler
 	ampModule *ampmodule.AmpModule
 
-	// managementRoutesRegistered tracks whether the management routes have been attached to the engine.
 	managementRoutesRegistered atomic.Bool
-	// managementRoutesEnabled controls whether management endpoints serve real handlers.
-	managementRoutesEnabled atomic.Bool
+	managementRoutesEnabled    atomic.Bool
 
-	localPassword string
-
+	localPassword      string
 	keepAliveEnabled   bool
 	keepAliveTimeout   time.Duration
 	keepAliveOnTimeout func()
@@ -167,6 +144,7 @@ type Server struct {
 //   - cfg: The server configuration
 //   - authManager: core runtime auth manager
 //   - accessManager: request authentication manager
+//
 // Returns:
 //   - *Server: A new server instance
 func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdkaccess.Manager, configFilePath string, opts ...ServerOption) *Server {
@@ -327,6 +305,7 @@ func (s *Server) Start() error {
 // active connections.
 // Parameters:
 //   - ctx: The context for graceful shutdown
+//
 // Returns:
 //   - error: An error if the server fails to stop
 func (s *Server) Stop(ctx context.Context) error {

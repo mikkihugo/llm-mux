@@ -28,9 +28,7 @@ type TokenClientProvider interface {
 }
 
 // TokenClientResult represents clients generated from persisted tokens.
-// It contains metadata about the loading operation and the number of successful authentications.
 type TokenClientResult struct {
-	// SuccessfulAuthed is the number of successfully authenticated clients.
 	SuccessfulAuthed int
 }
 
@@ -51,20 +49,11 @@ type APIKeyClientProvider interface {
 
 // APIKeyClientResult is returned by APIKeyClientProvider.Load()
 type APIKeyClientResult struct {
-	// GeminiKeyCount is the number of Gemini API keys loaded
-	GeminiKeyCount int
-
-	// VertexCompatKeyCount is the number of Vertex-compatible API keys loaded
+	GeminiKeyCount       int
 	VertexCompatKeyCount int
-
-	// ClaudeKeyCount is the number of Claude API keys loaded
-	ClaudeKeyCount int
-
-	// CodexKeyCount is the number of Codex API keys loaded
-	CodexKeyCount int
-
-	// OpenAICompatCount is the number of OpenAI compatibility API keys loaded
-	OpenAICompatCount int
+	ClaudeKeyCount       int
+	CodexKeyCount        int
+	OpenAICompatCount    int
 }
 
 // WatcherFactory creates a watcher for configuration and token changes.

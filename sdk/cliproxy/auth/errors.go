@@ -2,16 +2,11 @@ package auth
 
 // Error describes an authentication related failure in a provider agnostic format.
 type Error struct {
-	// Code is a short machine readable identifier.
-	Code string `json:"code,omitempty"`
-	// Message is a human readable description of the failure.
-	Message string `json:"message"`
-	// Retryable indicates whether a retry might fix the issue automatically.
-	Retryable bool `json:"retryable"`
-	// HTTPStatus optionally records an HTTP-like status code for the error.
-	HTTPStatus int `json:"http_status,omitempty"`
-	// Category classifies the error for retry/fallback decisions.
-	Category ErrorCategory `json:"category,omitempty"`
+	Code       string        `json:"code,omitempty"`
+	Message    string        `json:"message"`
+	Retryable  bool          `json:"retryable"`
+	HTTPStatus int           `json:"http_status,omitempty"`
+	Category   ErrorCategory `json:"category,omitempty"`
 }
 
 // Error implements the error interface.

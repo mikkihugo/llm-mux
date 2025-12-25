@@ -26,7 +26,6 @@ func corsMiddleware() gin.HandlerFunc {
 	}
 }
 
-
 // managementAvailabilityMiddleware returns middleware that checks if management routes are enabled.
 // If management routes are disabled, it returns a 404 status.
 func (s *Server) managementAvailabilityMiddleware() gin.HandlerFunc {

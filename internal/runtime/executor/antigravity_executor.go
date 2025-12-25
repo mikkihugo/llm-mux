@@ -39,32 +39,18 @@ const (
 )
 
 // =============================================================================
-// Model Alias Maps (refactored from switch statements)
+// Model Alias Functions - Use registry functions instead of hardcoded maps
 // =============================================================================
 
-// modelNameToAlias maps upstream model names to user-facing aliases.
-// Only map when upstream name is unclear or needs normalization.
-var modelNameToAlias = map[string]string{
-	"rev19-uic3-1p":     "gemini-2.5-computer-use-preview-10-2025",
-	"gemini-3-pro-high": "gemini-3-pro-preview",
+// modelName2Alias converts upstream model name to user-facing alias.
+// Returns empty string if the model should be hidden.
+func modelName2Alias(upstreamName string) string {
+	return registry.AntigravityUpstreamToID(upstreamName)
 }
 
-// modelAliasToName is auto-generated reverse of modelNameToAlias.
-var modelAliasToName = func() map[string]string {
-	m := make(map[string]string, len(modelNameToAlias))
-	for k, v := range modelNameToAlias {
-		m[v] = k
-	}
-	return m
-}()
-
-// hiddenModels contains model names that should be excluded from model listings.
-var hiddenModels = map[string]bool{
-	"chat_20706":                true,
-	"chat_23310":                true,
-	"gemini-2.5-flash-thinking": true,
-	"gemini-3-pro-low":          true,
-	"gemini-2.5-pro":            true,
+// alias2ModelName converts user-facing alias to upstream model name.
+func alias2ModelName(modelID string) string {
+	return registry.AntigravityIDToUpstream(modelID)
 }
 
 // Note: We use crypto/rand via uuid package for thread-safe random generation
@@ -401,115 +387,18 @@ func FetchAntigravityModels(ctx context.Context, auth *cliproxyauth.Auth, cfg *c
 		auth = updatedAuth
 	}
 
-	baseURLs := antigravityBaseURLFallbackOrder(auth)
 	httpClient := newProxyAwareHTTPClient(ctx, cfg, auth, 0)
-	handler := NewRetryHandler(AntigravityRetryConfig())
 
-	for idx := 0; idx < len(baseURLs); idx++ {
-		baseURL := baseURLs[idx]
-		hasNext := idx+1 < len(baseURLs)
-
-		modelsURL := baseURL + antigravityModelsPath
-		httpReq, errReq := http.NewRequestWithContext(ctx, http.MethodPost, modelsURL, bytes.NewReader([]byte(`{}`)))
-		if errReq != nil {
-			return nil
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Authorization", "Bearer "+token)
-		httpReq.Header.Set("User-Agent", resolveUserAgent(auth))
-		if host := resolveHost(baseURL); host != "" {
-			httpReq.Host = host
-		}
-
-		httpResp, errDo := httpClient.Do(httpReq)
-		if errDo != nil {
-			action, _ := handler.HandleError(ctx, errDo, hasNext)
-			if action == RetryActionContinueNext {
-				log.Debugf("antigravity executor: models request error on base url %s, retrying with fallback", baseURL)
-				continue
-			}
-			return nil
-		}
-
-		bodyBytes, errRead := io.ReadAll(httpResp.Body)
-		if errClose := httpResp.Body.Close(); errClose != nil {
-			log.Errorf("antigravity executor: close response body error: %v", errClose)
-		}
-		if errRead != nil {
-			if hasNext {
-				log.Debugf("antigravity executor: models read error on base url %s, retrying with fallback", baseURL)
-				continue
-			}
-			return nil
-		}
-
-		action, _ := handler.HandleResponse(ctx, httpResp.StatusCode, bodyBytes, hasNext)
-		if action == RetryActionContinueNext {
-			log.Debugf("antigravity executor: models request status %d on %s, trying next", httpResp.StatusCode, baseURL)
-			continue
-		}
-		if action != RetryActionSuccess {
-			return nil
-		}
-
-		result := gjson.GetBytes(bodyBytes, "models")
-		if !result.Exists() {
-			return nil
-		}
-
-		now := time.Now().Unix()
-		models := make([]*registry.ModelInfo, 0, len(result.Map()))
-
-		// Build a lookup map from static Gemini model definitions to inherit
-		// Thinking support and other metadata.
-		staticModels := registry.GetGeminiCLIModels()
-		staticModelMap := make(map[string]*registry.ModelInfo, len(staticModels))
-		for _, m := range staticModels {
-			if m != nil {
-				staticModelMap[m.ID] = m
-			}
-		}
-
-		for originalName := range result.Map() {
-			aliasName := modelName2Alias(originalName)
-			if aliasName == "" {
-				continue
-			}
-
-			modelInfo := &registry.ModelInfo{
-				ID:          aliasName,
-				Name:        aliasName,
-				Description: aliasName,
-				DisplayName: aliasName,
-				Version:     aliasName,
-				Object:      "model",
-				Created:     now,
-				OwnedBy:     antigravityAuthType,
-				Type:        antigravityAuthType,
-			}
-
-			// Set CanonicalID for Claude models to support both prefixed and non-prefixed names
-			if strings.HasPrefix(aliasName, "gemini-claude-") {
-				canonicalName := strings.TrimPrefix(aliasName, "gemini-")
-				modelInfo.CanonicalID = canonicalName
-			}
-
-			// Inherit metadata from static model definitions if available
-			if staticModel, ok := staticModelMap[aliasName]; ok {
-				modelInfo.Description = staticModel.Description
-				modelInfo.DisplayName = staticModel.DisplayName
-				modelInfo.Version = staticModel.Version
-				modelInfo.InputTokenLimit = staticModel.InputTokenLimit
-				modelInfo.OutputTokenLimit = staticModel.OutputTokenLimit
-				modelInfo.SupportedGenerationMethods = staticModel.SupportedGenerationMethods
-				modelInfo.Thinking = staticModel.Thinking
-			}
-
-			models = append(models, modelInfo)
-		}
-		return models
+	fetchCfg := CloudCodeFetchConfig{
+		BaseURLs:     antigravityBaseURLFallbackOrder(auth),
+		Token:        token,
+		ProviderType: antigravityAuthType,
+		UserAgent:    resolveUserAgent(auth),
+		Host:         resolveHost(antigravityBaseURLFallbackOrder(auth)[0]),
+		AliasFunc:    modelName2Alias,
 	}
-	return nil
+
+	return FetchCloudCodeModels(ctx, httpClient, fetchCfg)
 }
 
 // =============================================================================
@@ -919,25 +808,4 @@ func generateProjectID() string {
 	noun := projectIDNouns[int(uuidBytes[1])%len(projectIDNouns)]
 	randomPart := strings.ToLower(uuid.NewString())[:5]
 	return adj + "-" + noun + "-" + randomPart
-}
-
-// =============================================================================
-// Model Alias Functions (using maps instead of switch statements)
-// =============================================================================
-
-func modelName2Alias(modelName string) string {
-	if hiddenModels[modelName] {
-		return ""
-	}
-	if alias, ok := modelNameToAlias[modelName]; ok {
-		return alias
-	}
-	return modelName
-}
-
-func alias2ModelName(modelName string) string {
-	if name, ok := modelAliasToName[modelName]; ok {
-		return name
-	}
-	return modelName
 }

@@ -15,26 +15,25 @@ import (
 
 // RequestInfo holds essential details of an incoming HTTP request for logging purposes.
 type RequestInfo struct {
-	URL     string              // URL is the request URL.
-	Method  string              // Method is the HTTP method (e.g., GET, POST).
-	Headers map[string][]string // Headers contains the request headers.
-	Body    []byte              // Body is the raw request body.
+	URL     string
+	Method  string
+	Headers map[string][]string
+	Body    []byte
 }
 
-// ResponseWriterWrapper wraps the standard gin.ResponseWriter to intercept and log response data.
-// It is designed to handle both standard and streaming responses, ensuring that logging operations do not block the client response.
+// ResponseWriterWrapper wraps gin.ResponseWriter to capture response data for logging.
 type ResponseWriterWrapper struct {
 	gin.ResponseWriter
-	body           *bytes.Buffer              // body is a buffer to store the response body for non-streaming responses.
-	isStreaming    bool                       // isStreaming indicates whether the response is a streaming type (e.g., text/event-stream).
-	streamWriter   logging.StreamingLogWriter // streamWriter is a writer for handling streaming log entries.
-	chunkChannel   chan []byte                // chunkChannel is a channel for asynchronously passing response chunks to the logger.
-	streamDone     chan struct{}              // streamDone signals when the streaming goroutine completes.
-	logger         logging.RequestLogger      // logger is the instance of the request logger service.
-	requestInfo    *RequestInfo               // requestInfo holds the details of the original request.
-	statusCode     int                        // statusCode stores the HTTP status code of the response.
-	headers        map[string][]string        // headers stores the response headers.
-	logOnErrorOnly bool                       // logOnErrorOnly enables logging only when an error response is detected.
+	body           *bytes.Buffer
+	isStreaming    bool
+	streamWriter   logging.StreamingLogWriter
+	chunkChannel   chan []byte
+	streamDone     chan struct{}
+	logger         logging.RequestLogger
+	requestInfo    *RequestInfo
+	statusCode     int
+	headers        map[string][]string
+	logOnErrorOnly bool
 }
 
 // NewResponseWriterWrapper creates and initializes a new ResponseWriterWrapper.
@@ -43,6 +42,7 @@ type ResponseWriterWrapper struct {
 //   - w: The original gin.ResponseWriter to wrap.
 //   - logger: The logging service to use for recording requests.
 //   - requestInfo: The pre-captured information about the incoming request.
+//
 // Returns:
 //   - A pointer to a new ResponseWriterWrapper.
 func NewResponseWriterWrapper(w gin.ResponseWriter, logger logging.RequestLogger, requestInfo *RequestInfo) *ResponseWriterWrapper {

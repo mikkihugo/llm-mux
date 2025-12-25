@@ -104,7 +104,6 @@ func (h *Handler) deleteFromStringList(c *gin.Context, target *[]string, after f
 	c.JSON(400, gin.H{"error": "missing index or value"})
 }
 
-
 // api-keys
 func (h *Handler) GetAPIKeys(c *gin.Context) { c.JSON(200, gin.H{"api-keys": h.cfg.APIKeys}) }
 func (h *Handler) PutAPIKeys(c *gin.Context) {

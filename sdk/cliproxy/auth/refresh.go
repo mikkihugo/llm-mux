@@ -167,7 +167,6 @@ func authPreferredInterval(a *Auth) time.Duration {
 	return 0
 }
 
-
 // durationFromMetadata extracts a duration from metadata.
 func durationFromMetadata(meta map[string]any, keys ...string) time.Duration {
 	if len(meta) == 0 {

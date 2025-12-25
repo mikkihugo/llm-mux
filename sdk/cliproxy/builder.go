@@ -14,38 +14,17 @@ import (
 )
 
 // Builder constructs a Service instance with customizable providers.
-// It provides a fluent interface for configuring all aspects of the service
-// including authentication, file watching, HTTP server options, and lifecycle hooks.
 type Builder struct {
-	// cfg holds the application configuration.
-	cfg *config.Config
-
-	// configPath is the path to the configuration file.
-	configPath string
-
-	// tokenProvider handles loading token-based clients.
-	tokenProvider TokenClientProvider
-
-	// apiKeyProvider handles loading API key-based clients.
+	cfg            *config.Config
+	configPath     string
+	tokenProvider  TokenClientProvider
 	apiKeyProvider APIKeyClientProvider
-
-	// watcherFactory creates file watcher instances.
 	watcherFactory WatcherFactory
-
-	// hooks provides lifecycle callbacks.
-	hooks Hooks
-
-	// authManager handles authentication operations.
-	authManager *sdkAuth.Manager
-
-	// accessManager handles request authentication providers.
-	accessManager *sdkaccess.Manager
-
-	// coreManager handles core authentication and execution.
-	coreManager *coreauth.Manager
-
-	// serverOptions contains additional server configuration options.
-	serverOptions []api.ServerOption
+	hooks          Hooks
+	authManager    *sdkAuth.Manager
+	accessManager  *sdkaccess.Manager
+	coreManager    *coreauth.Manager
+	serverOptions  []api.ServerOption
 }
 
 // Hooks allows callers to plug into service lifecycle stages.

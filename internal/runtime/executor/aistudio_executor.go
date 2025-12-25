@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nghyane/llm-mux/internal/config"
+	"github.com/nghyane/llm-mux/internal/registry"
 	"github.com/nghyane/llm-mux/internal/translator/from_ir"
 	"github.com/nghyane/llm-mux/internal/util"
 	"github.com/nghyane/llm-mux/internal/wsrelay"
@@ -381,4 +382,37 @@ func ensureColonSpacedJSON(payload []byte) []byte {
 	}
 
 	return compacted
+}
+
+// =============================================================================
+// Dynamic Model Fetching
+// =============================================================================
+
+// FetchAIStudioModels retrieves available models via websocket relay.
+func FetchAIStudioModels(ctx context.Context, auth *cliproxyauth.Auth, relay *wsrelay.Manager) []*registry.ModelInfo {
+	if relay == nil {
+		return nil
+	}
+
+	var authID string
+	if auth != nil {
+		authID = auth.ID
+	}
+
+	modelsURL := GeminiDefaultBaseURL + glAPIModelsPath
+	wsReq := &wsrelay.HTTPRequest{
+		Method:  http.MethodGet,
+		URL:     modelsURL,
+		Headers: http.Header{"Content-Type": []string{"application/json"}},
+	}
+
+	resp, err := relay.NonStream(ctx, authID, wsReq)
+	if err != nil {
+		return nil
+	}
+	if resp.Status < 200 || resp.Status >= 300 {
+		return nil
+	}
+
+	return ParseGLAPIModels(resp.Body, "aistudio")
 }

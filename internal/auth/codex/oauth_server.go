@@ -14,32 +14,19 @@ import (
 )
 
 // OAuthServer handles the local HTTP server for OAuth callbacks.
-// It listens for the authorization code response from the OAuth provider
-// and captures the necessary parameters to complete the authentication flow.
 type OAuthServer struct {
-	// server is the underlying HTTP server instance
-	server *http.Server
-	// port is the port number on which the server listens
-	port int
-	// resultChan is a channel for sending OAuth results
+	server     *http.Server
+	port       int
 	resultChan chan *OAuthResult
-	// errorChan is a channel for sending OAuth errors
-	errorChan chan error
-	// mu is a mutex for protecting server state
-	mu sync.Mutex
-	// running indicates whether the server is currently running
-	running bool
+	errorChan  chan error
+	mu         sync.Mutex
+	running    bool
 }
 
 // OAuthResult contains the result of the OAuth callback.
-// It holds either the authorization code and state for successful authentication
-// or an error message if the authentication failed.
 type OAuthResult struct {
-	// Code is the authorization code received from the OAuth provider
-	Code string
-	// State is the state parameter used to prevent CSRF attacks
+	Code  string
 	State string
-	// Error contains any error message if the OAuth flow failed
 	Error string
 }
 
@@ -48,6 +35,7 @@ type OAuthResult struct {
 // for handling OAuth results and errors.
 // Parameters:
 //   - port: The port number on which the server should listen
+//
 // Returns:
 //   - *OAuthServer: A new OAuthServer instance
 func NewOAuthServer(port int) *OAuthServer {
@@ -106,6 +94,7 @@ func (s *OAuthServer) Start() error {
 // It performs a graceful shutdown of the HTTP server with a timeout.
 // Parameters:
 //   - ctx: The context for controlling the shutdown process
+//
 // Returns:
 //   - error: An error if the server fails to stop gracefully
 func (s *OAuthServer) Stop(ctx context.Context) error {
@@ -134,6 +123,7 @@ func (s *OAuthServer) Stop(ctx context.Context) error {
 // or the specified timeout is reached.
 // Parameters:
 //   - timeout: The maximum time to wait for the callback
+//
 // Returns:
 //   - *OAuthResult: The OAuth result if successful
 //   - error: An error if the callback times out or an error occurs
@@ -245,6 +235,7 @@ func (s *OAuthServer) handleSuccess(w http.ResponseWriter, r *http.Request) {
 // Parameters:
 //   - setupRequired: Whether additional setup is required after authentication
 //   - platformURL: The URL to the platform for additional setup
+//
 // Returns:
 //   - string: The HTML content for the success page
 func (s *OAuthServer) generateSuccessHTML(setupRequired bool, platformURL string) string {

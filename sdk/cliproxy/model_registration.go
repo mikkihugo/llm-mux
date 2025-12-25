@@ -8,12 +8,13 @@ import (
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/registry"
 	"github.com/nghyane/llm-mux/internal/runtime/executor"
+	"github.com/nghyane/llm-mux/internal/wsrelay"
 	coreauth "github.com/nghyane/llm-mux/sdk/cliproxy/auth"
 	log "github.com/sirupsen/logrus"
 )
 
 // registerModelsForAuth (re)binds provider models in the global registry using the core auth ID as client identifier.
-func registerModelsForAuth(a *coreauth.Auth, cfg *config.Config) {
+func registerModelsForAuth(a *coreauth.Auth, cfg *config.Config, wsGateway *wsrelay.Manager) {
 	if a == nil || a.ID == "" {
 		log.Debugf("registerModelsForAuth: auth is nil or empty ID")
 		return
@@ -44,7 +45,13 @@ func registerModelsForAuth(a *coreauth.Auth, cfg *config.Config) {
 	var models []*ModelInfo
 	switch provider {
 	case "gemini":
-		models = registry.GetGeminiModels()
+		// Try dynamic fetch first, fallback to static
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		models = executor.FetchGeminiModels(ctx, a, cfg)
+		cancel()
+		if len(models) == 0 {
+			models = registry.GetGeminiModelsForProvider("gemini")
+		}
 		if entry := resolveConfigGeminiKey(a, cfg); entry != nil {
 			if authKind == "apikey" {
 				excluded = entry.ExcludedModels
@@ -52,7 +59,13 @@ func registerModelsForAuth(a *coreauth.Auth, cfg *config.Config) {
 		}
 		models = applyExcludedModels(models, excluded)
 	case "vertex":
-		models = registry.GetGeminiVertexModels()
+		// Try dynamic fetch first (API key mode only), fallback to static
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		models = executor.FetchVertexModels(ctx, a, cfg)
+		cancel()
+		if len(models) == 0 {
+			models = registry.GetGeminiModelsForProvider("vertex")
+		}
 		if authKind == "apikey" {
 			if entry := resolveConfigVertexCompatKey(a, cfg); entry != nil && len(entry.Models) > 0 {
 				models = buildVertexCompatConfigModels(entry)
@@ -60,10 +73,24 @@ func registerModelsForAuth(a *coreauth.Auth, cfg *config.Config) {
 		}
 		models = applyExcludedModels(models, excluded)
 	case "gemini-cli":
-		models = registry.GetGeminiCLIModels()
+		// Try dynamic fetch first, fallback to static
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		models = executor.FetchGeminiCLIModels(ctx, a, cfg)
+		cancel()
+		if len(models) == 0 {
+			models = registry.GetGeminiModelsForProvider("gemini-cli")
+		}
 		models = applyExcludedModels(models, excluded)
 	case "aistudio":
-		models = registry.GetAIStudioModels()
+		// Try dynamic fetch via wsrelay, fallback to static
+		if wsGateway != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			models = executor.FetchAIStudioModels(ctx, a, wsGateway)
+			cancel()
+		}
+		if len(models) == 0 {
+			models = registry.GetGeminiModelsForProvider("aistudio")
+		}
 		models = applyExcludedModels(models, excluded)
 	case "antigravity":
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

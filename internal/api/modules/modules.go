@@ -43,6 +43,7 @@ type RouteModuleV2 interface {
 
 // RegisterModule registers a module using the V2 interface.
 // Example usage:
+//
 //	ctx := modules.Context{
 //	    Engine:         engine,
 //	    BaseHandler:    baseHandler,

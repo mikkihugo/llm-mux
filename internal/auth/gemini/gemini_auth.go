@@ -59,6 +59,7 @@ func NewGeminiAuth() *GeminiAuth {
 //   - ts: The Gemini token storage containing authentication tokens
 //   - cfg: The configuration containing proxy settings
 //   - noBrowser: Optional parameter to disable browser opening
+//
 // Returns:
 //   - *http.Client: An HTTP client configured with authentication
 //   - error: An error if the client configuration fails, nil otherwise
@@ -137,6 +138,7 @@ func (g *GeminiAuth) GetAuthenticatedClient(ctx context.Context, ts *GeminiToken
 //   - config: The OAuth2 configuration
 //   - token: The OAuth2 token to use for authentication
 //   - projectID: The Google Cloud Project ID to associate with this token
+//
 // Returns:
 //   - *GeminiTokenStorage: A new token storage object with user information
 //   - error: An error if the token storage creation fails, nil otherwise
@@ -201,6 +203,7 @@ func (g *GeminiAuth) createTokenStorage(ctx context.Context, config *oauth2.Conf
 //   - ctx: The context for the HTTP client
 //   - config: The OAuth2 configuration
 //   - noBrowser: Optional parameter to disable browser opening
+//
 // Returns:
 //   - *oauth2.Token: The OAuth2 token obtained from the authorization flow
 //   - error: An error if the token acquisition fails, nil otherwise
