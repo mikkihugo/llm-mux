@@ -405,6 +405,21 @@ func GetGeminiCLIModels() []*ModelInfo {
 			SupportedGenerationMethods: []string{"generateContent", "countTokens", "createCachedContent", "batchGenerateContent"},
 			Thinking:                   &ThinkingSupport{Min: 128, Max: 32768, ZeroAllowed: false, DynamicAllowed: true},
 		},
+		{
+			ID:                         "gemini-3-flash-preview",
+			Object:                     "model",
+			Created:                    1737158400,
+			OwnedBy:                    "google",
+			Type:                       "gemini-cli",
+			Name:                       "models/gemini-3-flash-preview",
+			Version:                    "3.0",
+			DisplayName:                "Gemini 3 Flash Preview",
+			Description:                "Fast Gemini 3 model with thinking support",
+			InputTokenLimit:            1048576,
+			OutputTokenLimit:           65536,
+			SupportedGenerationMethods: []string{"generateContent", "countTokens", "createCachedContent", "batchGenerateContent"},
+			Thinking:                   &ThinkingSupport{Min: 128, Max: 32768, ZeroAllowed: false, DynamicAllowed: true},
+		},
 		// Claude models via Antigravity (google antigravity)
 		// Use canonical names directly (no gemini- prefix) for simpler routing
 		{
@@ -1089,7 +1104,7 @@ func GetGitHubCopilotModels() []*ModelInfo {
 		{ID: "claude-opus-4.5", DisplayName: "Claude Opus 4.5", Description: "Anthropic Claude Opus 4.5 via GitHub Copilot", Created: 1763424000},
 		// Google models via GitHub Copilot
 		{ID: "gemini-2.5-pro", DisplayName: "Gemini 2.5 Pro", Description: "Google Gemini 2.5 Pro via GitHub Copilot", Created: 1763424000},
-		{ID: "gemini-3-flash", DisplayName: "Gemini 3 Flash", Description: "Google Gemini 3 Flash via GitHub Copilot", Created: 1763424000},
+		{ID: "gemini-3-flash-preview", DisplayName: "Gemini 3 Flash Preview", Description: "Google Gemini 3 Flash Preview via GitHub Copilot", Created: 1763424000},
 		{ID: "gemini-3-pro-preview", DisplayName: "Gemini 3 Pro Preview", Description: "Google Gemini 3 Pro Preview via GitHub Copilot", Created: 1763424000},
 		// xAI models via GitHub Copilot
 		{ID: "grok-code-fast-1", DisplayName: "Grok Code Fast 1", Description: "xAI Grok Code Fast 1 via GitHub Copilot", Created: 1763424000},

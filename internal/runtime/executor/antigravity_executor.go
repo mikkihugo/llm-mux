@@ -43,27 +43,20 @@ const (
 // =============================================================================
 
 // modelNameToAlias maps upstream model names to user-facing aliases.
+// Only map when upstream name is unclear or needs normalization.
 var modelNameToAlias = map[string]string{
-	"rev19-uic3-1p":              "gemini-2.5-computer-use-preview-10-2025",
-	"gemini-3-pro-image":         "gemini-3-pro-image-preview",
-	"gemini-3-pro-high":          "gemini-3-pro-preview",
-	"claude-sonnet-4-5":          "gemini-claude-sonnet-4-5",
-	"claude-sonnet-4-5-thinking": "gemini-claude-sonnet-4-5-thinking",
-	"claude-opus-4-5-thinking":   "gemini-claude-opus-4-5-thinking",
+	"rev19-uic3-1p":     "gemini-2.5-computer-use-preview-10-2025",
+	"gemini-3-pro-high": "gemini-3-pro-preview",
 }
 
-// modelAliasToName maps user-facing aliases to upstream model names.
-var modelAliasToName = map[string]string{
-	"gemini-2.5-computer-use-preview-10-2025": "rev19-uic3-1p",
-	"gemini-3-pro-image-preview":              "gemini-3-pro-image",
-	"gemini-3-pro-preview":                    "gemini-3-pro-high",
-	"gemini-claude-sonnet-4-5":                "claude-sonnet-4-5",
-	"claude-sonnet-4-5":                       "claude-sonnet-4-5",
-	"gemini-claude-sonnet-4-5-thinking":       "claude-sonnet-4-5-thinking",
-	"claude-sonnet-4-5-thinking":              "claude-sonnet-4-5-thinking",
-	"gemini-claude-opus-4-5-thinking":         "claude-opus-4-5-thinking",
-	"claude-opus-4-5-thinking":                "claude-opus-4-5-thinking",
-}
+// modelAliasToName is auto-generated reverse of modelNameToAlias.
+var modelAliasToName = func() map[string]string {
+	m := make(map[string]string, len(modelNameToAlias))
+	for k, v := range modelNameToAlias {
+		m[v] = k
+	}
+	return m
+}()
 
 // hiddenModels contains model names that should be excluded from model listings.
 var hiddenModels = map[string]bool{
