@@ -327,11 +327,7 @@ func parseGeminiContent(c gjson.Result) ir.Message {
 				args = "{}"
 			}
 			id := fc.Get("id").String()
-			if id == "" {
-				// Fallback to name if id not present (legacy format)
-				// This ensures functionCall and functionResponse with same name will match
-				id = name
-			}
+			// Keep ID as-is (empty or provided) - BuildToolMaps handles legacy format
 			// Extract thoughtSignature if present (Gemini format)
 			ts := ir.ExtractThoughtSignature(part)
 			msg.ToolCalls = append(msg.ToolCalls, ir.ToolCall{ID: id, Name: name, Args: args, ThoughtSignature: ts})
@@ -339,11 +335,13 @@ func parseGeminiContent(c gjson.Result) ir.Message {
 
 		if fr := part.Get("functionResponse"); fr.Exists() {
 			// Extract id field for proper tool result matching
-			// Bug fix: Previously used name as ToolCallID, causing mismatch in BuildToolMaps
 			id := fr.Get("id").String()
 			name := fr.Get("name").String()
-			if id == "" {
-				id = name // Fallback to name if id not present (legacy format)
+			// Keep ID as-is (empty or provided) - BuildToolMaps handles legacy format
+			// Use name as fallback only for the lookup key
+			lookupID := id
+			if lookupID == "" {
+				lookupID = name
 			}
 			response := fr.Get("response").Raw
 			if response == "" {
@@ -351,7 +349,7 @@ func parseGeminiContent(c gjson.Result) ir.Message {
 			}
 			funcResponses = append(funcResponses, funcResponseInfo{
 				partIndex: partIdx,
-				id:        id,
+				id:        lookupID,
 				response:  response,
 			})
 		}
@@ -488,9 +486,6 @@ func parseGeminiCandidate(candidate gjson.Result, schemaCtx *ir.ToolSchemaContex
 					args = schemaCtx.NormalizeToolCallArgs(name, args)
 				}
 				id := fc.Get("id").String()
-				if id == "" {
-					id = name // Fallback to name for matching with functionResponse
-				}
 				msg.ToolCalls = append(msg.ToolCalls, ir.ToolCall{ID: id, Name: name, Args: args, ThoughtSignature: ts})
 			}
 		} else if ec := part.Get("executableCode"); ec.Exists() {
@@ -579,9 +574,8 @@ func ParseGeminiResponseMetaWithContext(rawJSON []byte, schemaCtx *ir.ToolSchema
 					args = schemaCtx.NormalizeToolCallArgs(name, args)
 				}
 				id := fc.Get("id").String()
-				if id == "" {
-					id = name // Fallback to name for matching with functionResponse
-				}
+				// Don't fallback ID to name here - BuildToolMaps() handles legacy format detection
+				// and generates unique IDs when needed for providers that require them (e.g., Claude)
 				msg.ToolCalls = append(msg.ToolCalls, ir.ToolCall{ID: id, Name: name, Args: args, ThoughtSignature: ts})
 			}
 		} else if ec := part.Get("executableCode"); ec.Exists() {
@@ -688,9 +682,8 @@ func ParseGeminiChunkWithContext(rawJSON []byte, schemaCtx *ir.ToolSchemaContext
 					// for history/context purposes.
 
 					id := fc.Get("id").String()
-					if id == "" {
-						id = name // Fallback to name for matching with functionResponse
-					}
+					// Don't fallback ID to name here - BuildToolMaps() handles legacy format detection
+					// and generates unique IDs when needed for providers that require them (e.g., Claude)
 					args := fc.Get("args").Raw
 					if args == "" {
 						args = "{}"

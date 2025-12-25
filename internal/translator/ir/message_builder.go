@@ -176,11 +176,12 @@ func BuildToolResultsMap(messages []Message) map[string]*ToolResultPart {
 }
 
 // BuildToolMaps creates both tool call ID→name map and tool results map in a single pass.
+// Handles legacy format where client doesn't provide IDs (ID is empty or equals Name).
 func BuildToolMaps(messages []Message) (map[string]string, map[string]*ToolResultPart) {
 	idToName := make(map[string]string)
 	results := make(map[string]*ToolResultPart)
 
-	// For legacy format where ID == Name, we need FIFO matching
+	// For legacy format (no IDs), we need FIFO matching by name
 	// Track: name → queue of generated IDs
 	nameToIDs := make(map[string][]string)
 
@@ -189,8 +190,8 @@ func BuildToolMaps(messages []Message) (map[string]string, map[string]*ToolResul
 		case RoleAssistant:
 			for i := range msg.ToolCalls {
 				tc := &msg.ToolCalls[i]
-				// If ID equals Name (legacy format), generate unique ID
-				if tc.ID == tc.Name {
+				// Legacy format: ID is empty or equals Name
+				if tc.ID == "" || tc.ID == tc.Name {
 					tc.ID = GenToolCallID()
 				}
 				idToName[tc.ID] = tc.Name
@@ -201,11 +202,11 @@ func BuildToolMaps(messages []Message) (map[string]string, map[string]*ToolResul
 				part := &msg.Content[i]
 				if part.Type == ContentTypeToolResult && part.ToolResult != nil {
 					tr := part.ToolResult
-					// If ToolCallID looks like a name (legacy format), match to pending call
+					// Legacy format: ToolCallID is a tool name, match to pending call
 					originalID := tr.ToolCallID
 					if queue := nameToIDs[originalID]; len(queue) > 0 {
 						tr.ToolCallID = queue[0]
-						nameToIDs[originalID] = queue[1:] // Pop first (use original key!)
+						nameToIDs[originalID] = queue[1:]
 					}
 					results[tr.ToolCallID] = tr
 				}
