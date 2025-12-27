@@ -5,12 +5,67 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
 )
+
+// =============================================================================
+// HTTP Header Helpers
+// =============================================================================
+
+// HeaderConfig configures HTTP headers for API requests.
+// It provides a unified way to apply common headers across different providers.
+type HeaderConfig struct {
+	// Token is the Bearer token value for Authorization header.
+	Token string
+
+	// UserAgent is the User-Agent header value (optional).
+	UserAgent string
+
+	// ExtraHeaders are provider-specific headers to set.
+	ExtraHeaders map[string]string
+
+	// StreamHeaders are additional headers for streaming requests (e.g., Cache-Control).
+	StreamHeaders map[string]string
+}
+
+// ApplyAPIHeaders applies common HTTP headers for OpenAI-compatible APIs.
+// It sets Content-Type, Authorization (Bearer token), Accept, and optional User-Agent.
+// The stream parameter controls Accept header (text/event-stream vs application/json).
+func ApplyAPIHeaders(r *http.Request, cfg HeaderConfig, stream bool) {
+	// Standard headers (always set)
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer "+cfg.Token)
+
+	// Accept header based on streaming mode
+	if stream {
+		r.Header.Set("Accept", "text/event-stream")
+		// Apply stream-specific headers
+		for k, v := range cfg.StreamHeaders {
+			r.Header.Set(k, v)
+		}
+	} else {
+		r.Header.Set("Accept", "application/json")
+	}
+
+	// User-Agent (if provided)
+	if cfg.UserAgent != "" {
+		r.Header.Set("User-Agent", cfg.UserAgent)
+	}
+
+	// Extra provider-specific headers
+	for k, v := range cfg.ExtraHeaders {
+		r.Header.Set(k, v)
+	}
+}
+
+// =============================================================================
+// Decompression Pools
+// =============================================================================
 
 // gzipReaderPool reduces allocations for gzip decompression.
 // gzip.Reader can be reset and reused across requests.

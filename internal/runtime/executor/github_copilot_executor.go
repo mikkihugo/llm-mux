@@ -1,7 +1,6 @@
 package executor
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -143,71 +142,14 @@ func (e *GitHubCopilotExecutor) ExecuteStream(ctx context.Context, auth *cliprox
 		return nil, result.Error
 	}
 
-	out := make(chan cliproxyexecutor.StreamChunk)
-	stream = out
+	messageID := uuid.NewString()
+	processor := NewOpenAIStreamProcessor(e.cfg, from, req.Model, messageID)
 
-	go func() {
-		defer close(out)
-		defer func() { _ = httpResp.Body.Close() }()
-
-		buf := scannerBufferPool.Get().([]byte)
-		defer scannerBufferPool.Put(buf)
-
-		scanner := bufio.NewScanner(httpResp.Body)
-		scanner.Buffer(buf, DefaultStreamBufferSize)
-		messageID := uuid.NewString()
-		streamState := &OpenAIStreamState{}
-
-		for scanner.Scan() {
-			// Check context cancellation before processing each line
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			line := scanner.Bytes()
-
-			if bytes.HasPrefix(line, dataTag) {
-				data := bytes.TrimSpace(line[5:])
-				if bytes.Equal(data, []byte("[DONE]")) {
-					continue
-				}
-			}
-
-			// Translate stream chunk from OpenAI format and extract usage
-			result, errTranslate := TranslateOpenAIResponseStreamWithUsage(e.cfg, from, bytes.Clone(line), req.Model, messageID, streamState)
-			if errTranslate != nil {
-				select {
-				case out <- cliproxyexecutor.StreamChunk{Err: errTranslate}:
-				case <-ctx.Done():
-				}
-				return
-			}
-			if result.Usage != nil {
-				reporter.publish(ctx, result.Usage)
-			}
-			for _, chunk := range result.Chunks {
-				select {
-				case out <- cliproxyexecutor.StreamChunk{Payload: chunk}:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-
-		if errScan := scanner.Err(); errScan != nil {
-			reporter.publishFailure(ctx)
-			select {
-			case out <- cliproxyexecutor.StreamChunk{Err: errScan}:
-			case <-ctx.Done():
-			}
-		} else {
-			reporter.ensurePublished(ctx)
-		}
-	}()
-
-	return stream, nil
+	return RunSSEStream(ctx, httpResp.Body, reporter, processor, StreamConfig{
+		ExecutorName:    "github-copilot executor",
+		SkipDoneInData:  true,
+		EnsurePublished: true,
+	}), nil
 }
 
 func (e *GitHubCopilotExecutor) CountTokens(_ context.Context, _ *cliproxyauth.Auth, _ cliproxyexecutor.Request, _ cliproxyexecutor.Options) (cliproxyexecutor.Response, error) {

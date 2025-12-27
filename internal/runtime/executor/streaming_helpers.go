@@ -27,8 +27,10 @@ import (
 	"io"
 	"sync"
 
+	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	cliproxyexecutor "github.com/nghyane/llm-mux/sdk/cliproxy/executor"
+	sdktranslator "github.com/nghyane/llm-mux/sdk/translator"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 )
@@ -296,8 +298,8 @@ func RunSSEStream(
 					}
 				}
 			} else if cfg.PassthroughOnEmpty {
-				// Send raw line as passthrough (use append to avoid make+copy)
-				if !sendChunk(ctx, out, cliproxyexecutor.StreamChunk{Payload: append(line, '\n')}) {
+				// Send raw payload as passthrough (clone to avoid scanner buffer reuse)
+				if !sendChunk(ctx, out, cliproxyexecutor.StreamChunk{Payload: bytes.Clone(payload)}) {
 					return
 				}
 			}
@@ -342,4 +344,59 @@ func (p *SimpleStreamProcessor) ProcessDone() ([][]byte, error) {
 // NewSimpleStreamProcessor creates a SimpleStreamProcessor from a processing function.
 func NewSimpleStreamProcessor(fn func(line []byte) (chunks [][]byte, usage *ir.Usage, err error)) *SimpleStreamProcessor {
 	return &SimpleStreamProcessor{ProcessFunc: fn}
+}
+
+// =============================================================================
+// OpenAI-Compatible Stream Processor
+// =============================================================================
+
+// OpenAIStreamProcessor implements StreamProcessor for OpenAI-compatible APIs.
+// It uses TranslateOpenAIResponseStreamWithUsage for translation and supports
+// optional preprocessing for provider-specific transformations.
+type OpenAIStreamProcessor struct {
+	cfg         *config.Config
+	from        sdktranslator.Format
+	model       string
+	messageID   string
+	streamState *OpenAIStreamState
+	// Preprocess is an optional function to transform payload before translation.
+	// It receives the raw line and firstChunk flag, returns modified payload.
+	// If it returns nil, the line is skipped.
+	Preprocess func(line []byte, firstChunk bool) []byte
+	firstChunk bool
+}
+
+// NewOpenAIStreamProcessor creates a new OpenAI-compatible stream processor.
+func NewOpenAIStreamProcessor(cfg *config.Config, from sdktranslator.Format, model, messageID string) *OpenAIStreamProcessor {
+	return &OpenAIStreamProcessor{
+		cfg:         cfg,
+		from:        from,
+		model:       model,
+		messageID:   messageID,
+		streamState: &OpenAIStreamState{},
+		firstChunk:  true,
+	}
+}
+
+func (p *OpenAIStreamProcessor) ProcessLine(line []byte) ([][]byte, *ir.Usage, error) {
+	payload := line
+	isFirst := p.firstChunk
+	if p.Preprocess != nil {
+		payload = p.Preprocess(line, isFirst)
+		if payload == nil {
+			return nil, nil, nil
+		}
+	}
+	p.firstChunk = false // Always update after processing a line
+
+	result, err := TranslateOpenAIResponseStreamWithUsage(p.cfg, p.from, bytes.Clone(payload), p.model, p.messageID, p.streamState)
+	if err != nil {
+		return nil, nil, err
+	}
+	return result.Chunks, result.Usage, nil
+}
+
+func (p *OpenAIStreamProcessor) ProcessDone() ([][]byte, error) {
+	result, _ := TranslateOpenAIResponseStreamWithUsage(p.cfg, p.from, []byte("[DONE]"), p.model, p.messageID, p.streamState)
+	return result.Chunks, nil
 }
