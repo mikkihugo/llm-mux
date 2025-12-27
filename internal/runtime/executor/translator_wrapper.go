@@ -1635,11 +1635,20 @@ func hasToolUseWithoutThinking(messages []ir.Message) bool {
 		if msg.Role != ir.RoleAssistant || len(msg.ToolCalls) == 0 {
 			continue
 		}
-		// Check if this assistant message has thinking content
+		// Check if this assistant message has thinking content (including redacted_thinking)
 		hasThinking := false
 		for j := range msg.Content {
-			if msg.Content[j].Type == ir.ContentTypeReasoning && msg.Content[j].Reasoning != "" {
-				hasThinking = true
+			switch msg.Content[j].Type {
+			case ir.ContentTypeReasoning:
+				if msg.Content[j].Reasoning != "" {
+					hasThinking = true
+				}
+			case ir.ContentTypeRedactedThinking:
+				if msg.Content[j].RedactedData != "" {
+					hasThinking = true
+				}
+			}
+			if hasThinking {
 				break
 			}
 		}

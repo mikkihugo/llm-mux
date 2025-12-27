@@ -244,12 +244,28 @@ func BuildClaudeContentParts(msg Message, includeToolCalls bool, thinkingEnabled
 		p := &msg.Content[i]
 		switch p.Type {
 		case ContentTypeReasoning:
+			// CRITICAL: Skip thinking blocks when thinking is disabled
+			// Claude API rejects requests with thinking blocks in history when thinking is disabled
+			if !thinkingEnabled {
+				continue
+			}
 			if p.Reasoning != "" {
 				thinkingBlock := map[string]any{"type": ClaudeBlockThinking, "thinking": p.Reasoning}
 				if len(p.ThoughtSignature) > 0 {
 					thinkingBlock["signature"] = string(p.ThoughtSignature)
 				}
 				parts = append(parts, thinkingBlock)
+			}
+		case ContentTypeRedactedThinking:
+			// CRITICAL: Skip redacted thinking blocks when thinking is disabled
+			if !thinkingEnabled {
+				continue
+			}
+			if p.RedactedData != "" {
+				parts = append(parts, map[string]any{
+					"type": ClaudeBlockRedactedThinking,
+					"data": p.RedactedData,
+				})
 			}
 		case ContentTypeText:
 			if p.Text != "" {
@@ -456,13 +472,6 @@ func BuildClaudeContentParts(msg Message, includeToolCalls bool, thinkingEnabled
 				}
 
 				parts = append(parts, toolResultBlock)
-			}
-		case ContentTypeRedactedThinking:
-			if p.RedactedData != "" {
-				parts = append(parts, map[string]any{
-					"type": ClaudeBlockRedactedThinking,
-					"data": p.RedactedData,
-				})
 			}
 		}
 	}
