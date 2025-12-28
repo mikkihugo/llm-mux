@@ -250,11 +250,15 @@ func BuildClaudeContentParts(msg Message, includeToolCalls bool, thinkingEnabled
 			if !thinkingEnabled {
 				continue
 			}
+			// CRITICAL: Skip thinking blocks without valid signature
+			// Vertex/Claude API requires valid cryptographic signatures - we cannot fake them
+			// Thinking blocks without signatures will cause 400 error: "thinking.signature: Field required"
+			if !IsValidThoughtSignature(p.ThoughtSignature) {
+				continue
+			}
 			if p.Reasoning != "" {
 				thinkingBlock := map[string]any{"type": ClaudeBlockThinking, "thinking": p.Reasoning}
-				if len(p.ThoughtSignature) > 0 {
-					thinkingBlock["signature"] = string(p.ThoughtSignature)
-				}
+				thinkingBlock["signature"] = string(p.ThoughtSignature)
 				parts = append(parts, thinkingBlock)
 			}
 		case ContentTypeRedactedThinking:
