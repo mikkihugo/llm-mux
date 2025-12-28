@@ -1346,8 +1346,12 @@ func TranslateClaudeResponseStream(cfg *config.Config, to sdktranslator.Format, 
 		return [][]byte{claudeChunk}, nil
 	}
 
-	// Step 1: Parse Claude chunk to IR events
-	events, err := to_ir.ParseClaudeChunk(claudeChunk)
+	// Step 1: Parse Claude chunk to IR events with state tracking for signatures
+	var parserState *ir.ClaudeStreamParserState
+	if state != nil {
+		parserState = state.ParserState
+	}
+	events, err := to_ir.ParseClaudeChunkWithState(claudeChunk, parserState)
 	if err != nil {
 		return nil, err
 	}
@@ -1411,8 +1415,12 @@ func TranslateClaudeResponseStreamWithUsage(cfg *config.Config, to sdktranslator
 		return &StreamTranslationResult{Chunks: [][]byte{claudeChunk}}, nil
 	}
 
-	// Step 1: Parse Claude chunk to IR events
-	events, err := to_ir.ParseClaudeChunk(claudeChunk)
+	// Step 1: Parse Claude chunk to IR events with state tracking for signatures
+	var parserState *ir.ClaudeStreamParserState
+	if state != nil {
+		parserState = state.ParserState
+	}
+	events, err := to_ir.ParseClaudeChunkWithState(claudeChunk, parserState)
 	if err != nil {
 		return nil, err
 	}

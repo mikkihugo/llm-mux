@@ -528,6 +528,13 @@ func ParseClaudeResponse(rawJSON []byte) ([]ir.Message, *ir.Usage, error) {
 }
 
 func ParseClaudeChunk(rawJSON []byte) ([]ir.UnifiedEvent, error) {
+	return ParseClaudeChunkWithState(rawJSON, nil)
+}
+
+// ParseClaudeChunkWithState parses Claude SSE chunk with state tracking for signatures.
+// State is required to properly handle signature_delta events which arrive separately
+// from thinking_delta events. Without state, signatures will be lost.
+func ParseClaudeChunkWithState(rawJSON []byte, state *ir.ClaudeStreamParserState) ([]ir.UnifiedEvent, error) {
 	data := ir.ExtractSSEData(rawJSON)
 	if len(data) == 0 {
 		return nil, nil
@@ -540,8 +547,12 @@ func ParseClaudeChunk(rawJSON []byte) ([]ir.UnifiedEvent, error) {
 	switch parsed.Get("type").String() {
 	case "ping":
 		return nil, nil // Heartbeat, ignore
+	case "content_block_start":
+		return ir.ParseClaudeContentBlockStart(parsed, state), nil
 	case "content_block_delta":
-		return ir.ParseClaudeStreamDelta(parsed), nil
+		return ir.ParseClaudeStreamDeltaWithState(parsed, state), nil
+	case "content_block_stop":
+		return ir.ParseClaudeContentBlockStop(parsed, state), nil
 	case "message_delta":
 		return ir.ParseClaudeMessageDelta(parsed), nil
 	case "message_stop":

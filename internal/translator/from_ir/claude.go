@@ -31,11 +31,18 @@ type ClaudeStreamState struct {
 	HasTextContent       bool // Track if we emitted text (not just thinking)
 	FinishSent           bool
 	EstimatedInputTokens int64 // Pre-calculated input tokens for message_start
+
+	// ParserState tracks state for parsing Claude SSE responses (signatures, tool calls).
+	// Embedded to provide unified state for both parsing and output conversion.
+	ParserState *ir.ClaudeStreamParserState
 }
 
 // NewClaudeStreamState creates a new streaming state tracker.
 func NewClaudeStreamState() *ClaudeStreamState {
-	return &ClaudeStreamState{TextBlockIndex: 0}
+	return &ClaudeStreamState{
+		TextBlockIndex: 0,
+		ParserState:    ir.NewClaudeStreamParserState(),
+	}
 }
 
 func (p *ClaudeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
