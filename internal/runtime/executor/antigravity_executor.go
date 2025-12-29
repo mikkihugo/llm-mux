@@ -93,12 +93,15 @@ func (p *antigravityStreamProcessor) ProcessLine(payload []byte) ([][]byte, *ir.
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to translate chunk: %w", err)
 	}
+	if result == nil {
+		return nil, nil, nil
+	}
 	return result.Chunks, result.Usage, nil
 }
 
-// ProcessDone implements StreamProcessor.ProcessDone (no-op for Antigravity).
+// ProcessDone implements StreamProcessor.ProcessDone - flushes any pending Gemini chunk.
 func (p *antigravityStreamProcessor) ProcessDone() ([][]byte, error) {
-	return nil, nil
+	return flushPendingGeminiChunk(p.state), nil
 }
 
 // =============================================================================

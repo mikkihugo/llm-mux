@@ -213,9 +213,9 @@ func (p *geminiCLIStreamProcessor) ProcessLine(payload []byte) ([][]byte, *ir.Us
 	return result.Chunks, result.Usage, nil
 }
 
-// ProcessDone implements StreamProcessor.ProcessDone (no-op for Gemini CLI).
+// ProcessDone implements StreamProcessor.ProcessDone - flushes any pending Gemini chunk.
 func (p *geminiCLIStreamProcessor) ProcessDone() ([][]byte, error) {
-	return nil, nil
+	return flushPendingGeminiChunk(p.state), nil
 }
 
 // =============================================================================

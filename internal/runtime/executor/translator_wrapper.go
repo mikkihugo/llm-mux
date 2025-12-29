@@ -173,13 +173,20 @@ func convertEventsToGemini(events []ir.UnifiedEvent, model string) ([][]byte, er
 func convertEventsToGeminiWithDelay(events []ir.UnifiedEvent, model string, state *GeminiCLIStreamState) ([][]byte, error) {
 	var chunks [][]byte
 
+	// Skip all processing if finish was already sent
+	if state.FinishSent {
+		return nil, nil
+	}
+
+	hasContent := false
 	for _, event := range events {
 		if event.Type == ir.EventTypeFinish {
-			// Finish event: merge into pending chunk and emit
+			// Finish event: store for merging
 			state.PendingFinishEvent = &event
 			continue
 		}
 
+		hasContent = true
 		// Content event: convert to chunk
 		chunk, err := from_ir.ToGeminiChunk(event, model)
 		if err != nil {
@@ -207,6 +214,11 @@ func convertEventsToGeminiWithDelay(events []ir.UnifiedEvent, model string, stat
 		chunks = append(chunks, mergedChunk)
 		state.PendingGeminiChunk = nil
 		state.PendingFinishEvent = nil
+		state.FinishSent = true
+	} else if state.PendingFinishEvent != nil && !hasContent && len(state.PendingGeminiChunk) == 0 {
+		// Finish event arrived but no pending content - this is a finish-only chunk
+		// Mark as sent to prevent duplicate from ProcessDone
+		state.FinishSent = true
 	}
 
 	return chunks, nil
@@ -243,6 +255,26 @@ func mergeFinishIntoGeminiChunk(chunk []byte, finishEvent *ir.UnifiedEvent) ([]b
 
 	// Add trailing newline back
 	return append(result, '\n'), nil
+}
+
+// flushPendingGeminiChunk emits any pending Gemini chunk when stream ends.
+// Called from ProcessDone() to ensure the last chunk is not lost.
+func flushPendingGeminiChunk(state *GeminiCLIStreamState) [][]byte {
+	if state == nil || len(state.PendingGeminiChunk) == 0 || state.FinishSent {
+		return nil
+	}
+	chunk := state.PendingGeminiChunk
+	state.PendingGeminiChunk = nil
+	// If we have a pending finish event, merge it
+	if state.PendingFinishEvent != nil {
+		merged, err := mergeFinishIntoGeminiChunk(chunk, state.PendingFinishEvent)
+		state.PendingFinishEvent = nil
+		state.FinishSent = true
+		if err == nil {
+			return [][]byte{merged}
+		}
+	}
+	return [][]byte{chunk}
 }
 
 // geminiPreprocessor handles state tracking for Gemini-sourced streams.
@@ -1175,16 +1207,19 @@ func TranslateGeminiCLIResponseStreamWithUsage(cfg *config.Config, to sdktransla
 	case "gemini", "gemini-cli":
 		// Claude models: use delay-1-chunk strategy to merge finish into content chunk
 		// SDK rejects finish-only chunks without content
+		// Note: convertEventsToGeminiWithDelay modifies state.FinishSent directly
 		chunks, err = convertEventsToGeminiWithDelay(events, model, state)
 	default:
 		return &StreamTranslationResult{}, nil
 	}
 
-	// Sync state back
+	// Sync state back (except FinishSent for gemini format which is set directly)
 	state.ClaudeState = ss.ClaudeState
 	state.ToolCallIndex = ss.ToolCallIndex
 	state.ReasoningCharsAccum = ss.ReasoningCharsAccum
-	state.FinishSent = ss.FinishSent
+	if toStr != "gemini" && toStr != "gemini-cli" {
+		state.FinishSent = ss.FinishSent
+	}
 	state.HasToolCalls = ss.HasToolCalls
 
 	return &StreamTranslationResult{Chunks: chunks, Usage: usage}, err

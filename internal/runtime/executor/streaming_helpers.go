@@ -111,7 +111,9 @@ type StreamConfig struct {
 
 // GeminiPreprocessor creates a preprocessor for Gemini/Antigravity streams.
 // It applies FilterSSEUsageMetadata, extracts JSON payload, and validates JSON.
+// Also skips duplicate finish-only chunks (Claude Vertex sends 2 finish SSE lines).
 func GeminiPreprocessor() StreamPreprocessor {
+	var finishSeen bool
 	return func(line []byte) (payload []byte, skip bool) {
 		// Filter usage metadata for non-terminal chunks
 		filtered := FilterSSEUsageMetadata(line)
@@ -126,6 +128,32 @@ func GeminiPreprocessor() StreamPreprocessor {
 		if !gjson.ValidBytes(payload) {
 			log.Debugf("gemini preprocessor: skipping malformed SSE payload")
 			return nil, true
+		}
+
+		// Skip duplicate finish-only chunks (Claude Vertex sends 2 finish SSE lines)
+		// Check if this chunk has finishReason and empty/no content parts
+		parsed := gjson.ParseBytes(payload)
+		candidate := parsed.Get("candidates.0")
+		if !candidate.Exists() {
+			candidate = parsed.Get("response.candidates.0")
+		}
+
+		if candidate.Get("finishReason").Exists() {
+			parts := candidate.Get("content.parts").Array()
+			hasContent := false
+			for _, p := range parts {
+				if p.Get("text").String() != "" || p.Get("functionCall").Exists() {
+					hasContent = true
+					break
+				}
+			}
+			if !hasContent {
+				// This is a finish-only chunk
+				if finishSeen {
+					return nil, true // Skip duplicate
+				}
+				finishSeen = true
+			}
 		}
 
 		return payload, false
@@ -302,6 +330,25 @@ func RunSSEStream(
 			} else if cfg.PassthroughOnEmpty {
 				// Send raw payload as passthrough (clone to avoid scanner buffer reuse)
 				if !sendChunk(ctx, out, cliproxyexecutor.StreamChunk{Payload: bytes.Clone(payload)}) {
+					return
+				}
+			}
+		}
+
+		// Flush any pending chunks when stream ends normally (EOF)
+		// Claude Vertex doesn't send [DONE] marker - it just closes the stream
+		// This ensures the last held chunk from delay-1 strategy is emitted
+		if processor != nil {
+			doneChunks, doneErr := processor.ProcessDone()
+			if doneErr != nil {
+				if reporter != nil {
+					reporter.publishFailure(ctx)
+				}
+				sendChunk(ctx, out, cliproxyexecutor.StreamChunk{Err: doneErr})
+				return
+			}
+			for _, chunk := range doneChunks {
+				if !sendChunk(ctx, out, cliproxyexecutor.StreamChunk{Payload: chunk}) {
 					return
 				}
 			}
