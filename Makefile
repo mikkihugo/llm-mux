@@ -15,10 +15,13 @@ clean:
 	@rm -rf llm-mux dist/
 
 release:
-	@./scripts/release.sh help || true
+	@./scripts/release.sh $(filter-out $@,$(MAKECMDGOALS)) || true
+
+%:
+	@:
 
 help:
-	@echo "make build   - Build binary"
-	@echo "make test    - Run tests"
-	@echo "make clean   - Remove artifacts"
-	@echo "make release - Show release options"
+	@echo "make build            - Build binary"
+	@echo "make test             - Run tests"
+	@echo "make clean            - Remove artifacts"
+	@echo "make release [cmd]    - Run release script"
