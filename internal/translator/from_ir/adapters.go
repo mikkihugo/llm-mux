@@ -21,21 +21,21 @@ func (geminiConverter) ToChunk(event ir.UnifiedEvent, model string) ([]byte, err
 
 func (geminiConverter) Provider() string { return "gemini" }
 
-type geminiCLIConverter struct{}
+type vertexEnvelopeConverter struct{}
 
-func (geminiCLIConverter) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
-	return (&GeminiCLIProvider{}).ConvertRequest(req)
+func (vertexEnvelopeConverter) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
+	return (&VertexEnvelopeProvider{}).ConvertRequest(req)
 }
 
-func (geminiCLIConverter) ToResponse(messages []ir.Message, usage *ir.Usage, model string) ([]byte, error) {
+func (vertexEnvelopeConverter) ToResponse(messages []ir.Message, usage *ir.Usage, model string) ([]byte, error) {
 	return ToGeminiResponse(messages, usage, model)
 }
 
-func (geminiCLIConverter) ToChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
+func (vertexEnvelopeConverter) ToChunk(event ir.UnifiedEvent, model string) ([]byte, error) {
 	return ToGeminiChunk(event, model)
 }
 
-func (geminiCLIConverter) Provider() string { return "gemini-cli" }
+func (vertexEnvelopeConverter) Provider() string { return "vertex-envelope" }
 
 type claudeConverter struct{}
 
@@ -103,7 +103,7 @@ func (kiroConverter) Provider() string { return "kiro" }
 
 func init() {
 	translator.RegisterFromIR("gemini", geminiConverter{})
-	translator.RegisterFromIR("gemini-cli", geminiCLIConverter{})
+	translator.RegisterFromIR("vertex-envelope", vertexEnvelopeConverter{})
 	translator.RegisterFromIR("claude", claudeConverter{})
 	translator.RegisterFromIR("openai", openaiConverter{})
 	translator.RegisterFromIR("ollama", ollamaConverter{})

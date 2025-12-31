@@ -2,12 +2,12 @@ package from_ir
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/tidwall/gjson"
 
 	"github.com/nghyane/llm-mux/internal/json"
+	"github.com/nghyane/llm-mux/internal/translator/from_ir/parts"
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
@@ -139,7 +139,7 @@ func (p *GeminiProvider) applyMessages(root map[string]any, req *ir.UnifiedChatR
 				root["systemInstruction"] = map[string]any{"role": "user", "parts": []any{map[string]any{"text": text}}}
 			}
 		case ir.RoleUser:
-			coalescer.Emit("user", p.buildUserParts(msg))
+			coalescer.Emit("user", parts.BuildUserParts(msg.Content))
 		case ir.RoleAssistant:
 			modelParts, responseParts := p.buildAssistantAndToolParts(msg, toolIDToName, toolResults, req.Model)
 			coalescer.Emit("model", modelParts)
@@ -161,71 +161,6 @@ func (p *GeminiProvider) extractSystemText(msg *ir.Message) string {
 		}
 	}
 	return ""
-}
-
-func (p *GeminiProvider) buildUserParts(msg *ir.Message) []any {
-	parts := make([]any, 0, len(msg.Content))
-	for i := range msg.Content {
-		part := &msg.Content[i]
-		switch part.Type {
-		case ir.ContentTypeText:
-			if part.Text != "" {
-				parts = append(parts, map[string]any{"text": part.Text})
-			}
-		case ir.ContentTypeImage:
-			if p := p.buildImagePart(part.Image); p != nil {
-				parts = append(parts, p)
-			}
-		case ir.ContentTypeAudio:
-			if p := p.buildAudioPart(part.Audio); p != nil {
-				parts = append(parts, p)
-			}
-		case ir.ContentTypeVideo:
-			if p := p.buildVideoPart(part.Video); p != nil {
-				parts = append(parts, p)
-			}
-		}
-	}
-	return parts
-}
-
-func (p *GeminiProvider) buildImagePart(img *ir.ImagePart) any {
-	if img == nil {
-		return nil
-	}
-	if img.Data != "" {
-		return map[string]any{"inlineData": map[string]any{"mimeType": img.MimeType, "data": img.Data}}
-	}
-	if u := img.URL; strings.HasPrefix(u, "files/") || strings.HasPrefix(u, "gs://") {
-		return map[string]any{"fileData": map[string]any{"mimeType": img.MimeType, "fileUri": u}}
-	}
-	return nil
-}
-
-func (p *GeminiProvider) buildAudioPart(audio *ir.AudioPart) any {
-	if audio == nil {
-		return nil
-	}
-	if audio.FileURI != "" {
-		return map[string]any{"fileData": map[string]any{"mimeType": audio.MimeType, "fileUri": audio.FileURI}}
-	}
-	if audio.Data != "" {
-		return map[string]any{"inlineData": map[string]any{"mimeType": audio.MimeType, "data": audio.Data}}
-	}
-	return nil
-}
-
-func (p *GeminiProvider) buildVideoPart(video *ir.VideoPart) any {
-	if video == nil {
-		return nil
-	}
-	if video.Data != "" {
-		return map[string]any{"inlineData": map[string]any{"mimeType": video.MimeType, "data": video.Data}}
-	}
-	if video.FileURI != "" {
-		return map[string]any{"fileData": map[string]any{"mimeType": video.MimeType, "fileUri": video.FileURI}}
-	}
-	return nil
 }
 
 func (p *GeminiProvider) buildAssistantAndToolParts(msg *ir.Message, toolIDToName map[string]string, toolResults map[string]*ir.ToolResultPart, model string) (modelParts, responseParts []any) {
@@ -552,26 +487,230 @@ func buildGroundingMetadataMap(gm *ir.GroundingMetadata) map[string]any {
 	return res
 }
 
-type GeminiCLIProvider struct{}
+type VertexEnvelopeProvider struct{}
 
-func (p *GeminiCLIProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
-	gj, err := (&GeminiProvider{}).ConvertRequest(req)
+func (p *VertexEnvelopeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
+	innerReq, err := p.buildInnerRequest(req)
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(map[string]any{"project": "", "model": req.Model, "request": json.RawMessage(gj)})
+	return json.Marshal(map[string]any{"project": "", "model": req.Model, "request": innerReq})
 }
 
-func (p *GeminiCLIProvider) ParseResponse(rj []byte) ([]ir.Message, *ir.Usage, error) {
+func (p *VertexEnvelopeProvider) buildInnerRequest(req *ir.UnifiedChatRequest) (any, error) {
+	if ir.IsClaudeModel(req.Model) {
+		return p.buildClaudeInnerRequest(req), nil
+	}
+	return json.RawMessage(mustConvertGemini(req)), nil
+}
+
+func mustConvertGemini(req *ir.UnifiedChatRequest) []byte {
+	gj, _ := (&GeminiProvider{}).ConvertRequest(req)
+	return gj
+}
+
+func (p *VertexEnvelopeProvider) buildClaudeInnerRequest(req *ir.UnifiedChatRequest) map[string]any {
+	root := map[string]any{
+		"contents": p.buildClaudeContents(req),
+	}
+
+	for _, m := range req.Messages {
+		if m.Role == ir.RoleSystem {
+			if text := ir.CombineTextParts(m); text != "" {
+				root["systemInstruction"] = map[string]any{
+					"role":  "user",
+					"parts": []any{map[string]any{"text": text}},
+				}
+				break
+			}
+		}
+	}
+
+	gc := p.buildClaudeGenerationConfig(req)
+	if len(gc) > 0 {
+		root["generationConfig"] = gc
+	}
+
+	if len(req.Tools) > 0 {
+		root["tools"] = p.buildClaudeTools(req)
+	}
+
+	return root
+}
+
+func (p *VertexEnvelopeProvider) buildClaudeContents(req *ir.UnifiedChatRequest) []any {
+	var contents []any
+	toolIDToName, toolResults := ir.BuildToolMaps(req.Messages)
+
+	for i := range req.Messages {
+		msg := &req.Messages[i]
+		if msg.Role == ir.RoleSystem {
+			continue
+		}
+
+		switch msg.Role {
+		case ir.RoleUser:
+			userParts := parts.BuildUserParts(msg.Content)
+			if len(userParts) > 0 {
+				content := map[string]any{"role": "user", "parts": userParts}
+				if msg.CacheControl != nil {
+					content["cacheControl"] = buildCacheControlMap(msg.CacheControl)
+				}
+				contents = append(contents, content)
+			}
+		case ir.RoleAssistant:
+			modelParts := p.buildClaudeAssistantParts(msg, toolIDToName, toolResults)
+			if len(modelParts) > 0 {
+				content := map[string]any{"role": "model", "parts": modelParts}
+				if msg.CacheControl != nil {
+					content["cacheControl"] = buildCacheControlMap(msg.CacheControl)
+				}
+				contents = append(contents, content)
+			}
+		case ir.RoleTool:
+			responseParts := p.buildClaudeToolResultParts(msg, toolIDToName)
+			if len(responseParts) > 0 {
+				contents = append(contents, map[string]any{"role": "user", "parts": responseParts})
+			}
+		}
+	}
+
+	return contents
+}
+
+func buildCacheControlMap(cc *ir.CacheControl) map[string]any {
+	result := map[string]any{"type": cc.Type}
+	if cc.TTL != nil {
+		result["ttl"] = *cc.TTL
+	}
+	return result
+}
+
+func (p *VertexEnvelopeProvider) buildClaudeAssistantParts(msg *ir.Message, toolIDToName map[string]string, toolResults map[string]*ir.ToolResultPart) []any {
+	var parts []any
+
+	for i := range msg.Content {
+		cp := &msg.Content[i]
+		switch cp.Type {
+		case ir.ContentTypeReasoning:
+			if cp.Reasoning != "" {
+				part := map[string]any{"text": cp.Reasoning, "thought": true}
+				if ir.IsValidThoughtSignature(cp.ThoughtSignature) {
+					part["thoughtSignature"] = string(cp.ThoughtSignature)
+				}
+				parts = append(parts, part)
+			}
+		case ir.ContentTypeText:
+			if cp.Text != "" {
+				parts = append(parts, map[string]any{"text": cp.Text})
+			}
+		}
+	}
+
+	for i := range msg.ToolCalls {
+		tc := &msg.ToolCalls[i]
+		id := tc.ID
+		if id == "" {
+			id = ir.GenToolCallID()
+		}
+		part := map[string]any{
+			"functionCall": map[string]any{
+				"name": tc.Name,
+				"args": json.RawMessage(ir.ValidateAndNormalizeJSON(tc.Args)),
+				"id":   id,
+			},
+		}
+		if ir.IsValidThoughtSignature(tc.ThoughtSignature) {
+			part["thoughtSignature"] = string(tc.ThoughtSignature)
+		}
+		parts = append(parts, part)
+	}
+
+	return parts
+}
+
+func (p *VertexEnvelopeProvider) buildClaudeToolResultParts(msg *ir.Message, toolIDToName map[string]string) []any {
+	var parts []any
+	for i := range msg.Content {
+		part := &msg.Content[i]
+		if part.Type == ir.ContentTypeToolResult && part.ToolResult != nil {
+			tr := part.ToolResult
+			name := toolIDToName[tr.ToolCallID]
+			if name == "" {
+				name = tr.ToolCallID
+			}
+			resp := map[string]any{"content": tr.Result}
+			if tr.IsError {
+				resp = map[string]any{"error": tr.Result}
+			}
+			parts = append(parts, map[string]any{
+				"functionResponse": map[string]any{
+					"name":     name,
+					"id":       tr.ToolCallID,
+					"response": resp,
+				},
+			})
+		}
+	}
+	return parts
+}
+
+func (p *VertexEnvelopeProvider) buildClaudeGenerationConfig(req *ir.UnifiedChatRequest) map[string]any {
+	gc := make(map[string]any)
+
+	if req.Temperature != nil {
+		gc["temperature"] = *req.Temperature
+	}
+	if req.TopP != nil {
+		gc["topP"] = *req.TopP
+	}
+	if req.TopK != nil {
+		gc["topK"] = *req.TopK
+	}
+	if req.MaxTokens != nil && *req.MaxTokens > 0 {
+		gc["maxOutputTokens"] = *req.MaxTokens
+	}
+	if len(req.StopSequences) > 0 {
+		gc["stopSequences"] = req.StopSequences
+	}
+
+	if req.Thinking != nil && req.Thinking.IncludeThoughts {
+		tc := map[string]any{"includeThoughts": true}
+		if req.Thinking.ThinkingBudget != nil && *req.Thinking.ThinkingBudget > 0 {
+			tc["thinkingBudget"] = *req.Thinking.ThinkingBudget
+		}
+		gc["thinkingConfig"] = tc
+	}
+
+	return gc
+}
+
+func (p *VertexEnvelopeProvider) buildClaudeTools(req *ir.UnifiedChatRequest) []any {
+	var funcs []any
+	for _, t := range req.Tools {
+		params := ir.CleanJsonSchemaForGemini(ir.CopyMap(t.Parameters))
+		if params == nil {
+			params = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
+		funcs = append(funcs, map[string]any{
+			"name":        t.Name,
+			"description": t.Description,
+			"parameters":  params,
+		})
+	}
+	return []any{map[string]any{"functionDeclarations": funcs}}
+}
+
+func (p *VertexEnvelopeProvider) ParseResponse(rj []byte) ([]ir.Message, *ir.Usage, error) {
 	_, ms, us, err := to_ir.ParseGeminiResponse(rj)
 	return ms, us, err
 }
 
-func (p *GeminiCLIProvider) ParseStreamChunk(cj []byte) ([]ir.UnifiedEvent, error) {
+func (p *VertexEnvelopeProvider) ParseStreamChunk(cj []byte) ([]ir.UnifiedEvent, error) {
 	return to_ir.ParseGeminiChunk(cj)
 }
 
-func (p *GeminiCLIProvider) ParseStreamChunkWithContext(cj []byte, sc *ir.ToolSchemaContext) ([]ir.UnifiedEvent, error) {
+func (p *VertexEnvelopeProvider) ParseStreamChunkWithContext(cj []byte, sc *ir.ToolSchemaContext) ([]ir.UnifiedEvent, error) {
 	return to_ir.ParseGeminiChunkWithContext(cj, sc)
 }
 
@@ -620,7 +759,6 @@ func (p *GeminiProvider) applyThinkingConfig(gc map[string]any, req *ir.UnifiedC
 	} else {
 		gc["thinkingConfig"] = map[string]any{"thinkingBudget": eb, "includeThoughts": ei}
 	}
-	p.adjustMaxTokensForThinking(gc, req)
 }
 
 func (p *GeminiProvider) applyGemini3ThinkingConfig(gc map[string]any, req *ir.UnifiedChatRequest, ei bool) {
@@ -634,44 +772,4 @@ func (p *GeminiProvider) applyGemini3ThinkingConfig(gc map[string]any, req *ir.U
 		tl = string(ir.DefaultThinkingLevel(req.Model))
 	}
 	gc["thinkingConfig"] = map[string]any{"includeThoughts": ei, "thinkingLevel": tl}
-}
-
-func (p *GeminiProvider) adjustMaxTokensForThinking(gc map[string]any, req *ir.UnifiedChatRequest) {
-	tc, ok := gc["thinkingConfig"].(map[string]any)
-	if !ok {
-		return
-	}
-	var b int32
-	if l, ok := tc["thinkingLevel"].(string); ok {
-		b = int32(ir.ThinkingLevelToBudget(ir.ThinkingLevel(l)))
-	} else {
-		switch v := tc["thinkingBudget"].(type) {
-		case int:
-			b = int32(v)
-		case int32:
-			b = v
-		}
-	}
-	if b <= 0 {
-		return
-	}
-	cm := 0
-	switch v := gc["maxOutputTokens"].(type) {
-	case int:
-		cm = v
-	case int32:
-		cm = int(v)
-	case int64:
-		cm = int(v)
-	case float64:
-		cm = int(v)
-	default:
-		if req.MaxTokens != nil {
-			cm = *req.MaxTokens
-		}
-	}
-	nm := max(cm, int(b)*2, ir.GeminiSafeMaxTokens)
-	if nm > cm {
-		gc["maxOutputTokens"] = nm
-	}
 }
