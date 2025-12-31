@@ -17,7 +17,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/sjson"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -472,8 +472,8 @@ func geminiCreds(a *provider.Auth) (apiKey, bearer string) {
 
 func resolveGeminiBaseURL(auth *provider.Auth) string {
 	base := GeminiDefaultBaseURL
-	if auth != nil && auth.Attributes != nil {
-		if custom := strings.TrimSpace(auth.Attributes["base_url"]); custom != "" {
+	if auth != nil {
+		if custom := AttrStringValue(auth.Attributes, "base_url"); custom != "" {
 			base = strings.TrimRight(custom, "/")
 		}
 	}

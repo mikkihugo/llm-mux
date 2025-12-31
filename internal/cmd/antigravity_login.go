@@ -6,7 +6,7 @@ import (
 
 	"github.com/nghyane/llm-mux/internal/auth/login"
 	"github.com/nghyane/llm-mux/internal/config"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // DoAntigravityLogin triggers the OAuth flow for the antigravity provider and saves tokens.

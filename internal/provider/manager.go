@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nghyane/llm-mux/internal/registry"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // ProviderExecutor defines the contract required by Manager to execute provider calls.
@@ -107,13 +107,30 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 	if hook == nil {
 		hook = NoopHook{}
 	}
-	return &Manager{
+	m := &Manager{
 		store:         store,
 		executors:     make(map[string]ProviderExecutor),
 		selector:      selector,
 		hook:          hook,
 		auths:         make(map[string]*Auth),
 		providerStats: NewProviderStats(),
+	}
+	if lc, ok := selector.(SelectorLifecycle); ok {
+		lc.Start()
+	}
+	return m
+}
+
+// Stop gracefully shuts down the manager and its components.
+func (m *Manager) Stop() {
+	if m.refreshCancel != nil {
+		m.refreshCancel()
+	}
+	m.mu.RLock()
+	selector := m.selector
+	m.mu.RUnlock()
+	if lc, ok := selector.(SelectorLifecycle); ok {
+		lc.Stop()
 	}
 }
 

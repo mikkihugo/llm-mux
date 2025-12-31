@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/nghyane/llm-mux/internal/registry"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/gjson"
 )
 

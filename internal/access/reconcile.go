@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/nghyane/llm-mux/internal/config"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // ReconcileProviders builds the desired provider list by reusing existing providers when possible

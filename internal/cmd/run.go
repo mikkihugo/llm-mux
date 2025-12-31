@@ -13,7 +13,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/api"
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/service"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // StartService builds and runs the proxy service using the exported SDK.

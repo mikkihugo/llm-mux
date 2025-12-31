@@ -12,7 +12,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/access"
 	"github.com/nghyane/llm-mux/internal/api/modules"
 	"github.com/nghyane/llm-mux/internal/config"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // Option configures the AmpModule.

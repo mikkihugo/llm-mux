@@ -15,7 +15,7 @@ import (
 
 	"github.com/nghyane/llm-mux/internal/auth/login"
 	"github.com/nghyane/llm-mux/internal/config"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // DoClineLogin handles the Cline authentication flow using the shared authentication manager.

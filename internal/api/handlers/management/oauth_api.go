@@ -21,7 +21,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/misc"
 	"github.com/nghyane/llm-mux/internal/oauth"
 	"github.com/nghyane/llm-mux/internal/provider"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )

@@ -22,7 +22,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 const kiroAPIURL = KiroDefaultBaseURL
@@ -45,9 +45,7 @@ type KiroExecutor struct {
 	cfg *config.Config
 }
 
-func NewKiroExecutor(cfg *config.Config) *KiroExecutor {
-	return &KiroExecutor{cfg: cfg}
-}
+func NewKiroExecutor(cfg *config.Config) *KiroExecutor { return &KiroExecutor{cfg: cfg} }
 
 func (e *KiroExecutor) Identifier() string { return constant.Kiro }
 

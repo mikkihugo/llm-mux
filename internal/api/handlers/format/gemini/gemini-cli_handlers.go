@@ -12,9 +12,9 @@ import (
 	"github.com/nghyane/llm-mux/internal/api/handlers/format"
 	"github.com/nghyane/llm-mux/internal/constant"
 	"github.com/nghyane/llm-mux/internal/interfaces"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 )
 
@@ -88,7 +88,7 @@ func (h *GeminiCLIAPIHandler) CLIHandler(c *gin.Context) {
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			defer func() {
 				if err = resp.Body.Close(); err != nil {
-					log.Printf("warn: failed to close response body: %v", err)
+					log.Warnf("failed to close response body: %v", err)
 				}
 			}()
 			bodyBytes, _ := io.ReadAll(resp.Body)

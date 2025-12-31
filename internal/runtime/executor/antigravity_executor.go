@@ -5,21 +5,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nghyane/llm-mux/internal/json"
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nghyane/llm-mux/internal/config"
+	"github.com/nghyane/llm-mux/internal/json"
 	"github.com/nghyane/llm-mux/internal/oauth"
 	"github.com/nghyane/llm-mux/internal/provider"
 	"github.com/nghyane/llm-mux/internal/registry"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/singleflight"
 )
@@ -320,12 +319,13 @@ func FetchAntigravityModels(ctx context.Context, auth *provider.Auth, cfg *confi
 
 	httpClient := newProxyAwareHTTPClient(ctx, cfg, auth, 0)
 
+	baseURLs := antigravityBaseURLFallbackOrder(auth)
 	fetchCfg := CloudCodeFetchConfig{
-		BaseURLs:     antigravityBaseURLFallbackOrder(auth),
+		BaseURLs:     baseURLs,
 		Token:        token,
 		ProviderType: antigravityAuthType,
 		UserAgent:    resolveUserAgent(auth),
-		Host:         resolveHost(antigravityBaseURLFallbackOrder(auth)[0]),
+		Host:         ResolveHost(baseURLs[0]),
 		AliasFunc:    modelName2Alias,
 	}
 
@@ -342,15 +342,15 @@ func (e *AntigravityExecutor) ensureAccessToken(ctx context.Context, auth *provi
 		return "", nil, NewStatusError(http.StatusUnauthorized, "missing auth", nil)
 	}
 
-	accessToken := metaStringValue(auth.Metadata, "access_token")
-	expiry := tokenExpiry(auth.Metadata)
+	accessToken := MetaStringValue(auth.Metadata, "access_token")
+	expiry := TokenExpiry(auth.Metadata)
 	if accessToken != "" && expiry.After(time.Now().Add(DefaultRefreshSkew)) {
 		return accessToken, nil, nil
 	}
 
 	result, err, _ := e.sfGroup.Do(auth.ID, func() (interface{}, error) {
-		accessToken := metaStringValue(auth.Metadata, "access_token")
-		expiry := tokenExpiry(auth.Metadata)
+		accessToken := MetaStringValue(auth.Metadata, "access_token")
+		expiry := TokenExpiry(auth.Metadata)
 		if accessToken != "" && expiry.After(time.Now().Add(DefaultRefreshSkew)) {
 			return tokenRefreshResult{token: accessToken, auth: nil}, nil
 		}
@@ -360,7 +360,7 @@ func (e *AntigravityExecutor) ensureAccessToken(ctx context.Context, auth *provi
 			return nil, errRefresh
 		}
 		return tokenRefreshResult{
-			token: metaStringValue(updated.Metadata, "access_token"),
+			token: MetaStringValue(updated.Metadata, "access_token"),
 			auth:  updated,
 		}, nil
 	})
@@ -377,7 +377,7 @@ func (e *AntigravityExecutor) refreshToken(ctx context.Context, auth *provider.A
 	if auth == nil {
 		return nil, NewStatusError(http.StatusUnauthorized, "missing auth", nil)
 	}
-	refreshToken := metaStringValue(auth.Metadata, "refresh_token")
+	refreshToken := MetaStringValue(auth.Metadata, "refresh_token")
 	if refreshToken == "" {
 		return auth, NewStatusError(http.StatusUnauthorized, "missing refresh token", nil)
 	}
@@ -484,12 +484,7 @@ func (e *AntigravityExecutor) buildRequest(ctx context.Context, auth *provider.A
 		ub.WriteString(url.QueryEscape(alt))
 	}
 
-	projectID := ""
-	if auth != nil && auth.Metadata != nil {
-		if pid, ok := auth.Metadata["project_id"].(string); ok {
-			projectID = strings.TrimSpace(pid)
-		}
-	}
+	projectID := MetaStringValue(auth.Metadata, "project_id")
 	payload = geminiToAntigravity(modelName, payload, projectID)
 	payload, _ = sjson.SetBytes(payload, "model", alias2ModelName(modelName))
 
@@ -505,69 +500,11 @@ func (e *AntigravityExecutor) buildRequest(ctx context.Context, auth *provider.A
 	} else {
 		httpReq.Header.Set("Accept", "application/json")
 	}
-	if host := resolveHost(base); host != "" {
+	if host := ResolveHost(base); host != "" {
 		httpReq.Host = host
 	}
 
 	return httpReq, nil
-}
-
-func tokenExpiry(metadata map[string]any) time.Time {
-	if metadata == nil {
-		return time.Time{}
-	}
-	if expStr, ok := metadata["expired"].(string); ok {
-		expStr = strings.TrimSpace(expStr)
-		if expStr != "" {
-			if parsed, errParse := time.Parse(time.RFC3339, expStr); errParse == nil {
-				return parsed
-			}
-		}
-	}
-	expiresIn, hasExpires := int64Value(metadata["expires_in"])
-	tsMs, hasTimestamp := int64Value(metadata["timestamp"])
-	if hasExpires && hasTimestamp {
-		return time.Unix(0, tsMs*int64(time.Millisecond)).Add(time.Duration(expiresIn) * time.Second)
-	}
-	return time.Time{}
-}
-
-func metaStringValue(metadata map[string]any, key string) string {
-	if metadata == nil {
-		return ""
-	}
-	if v, ok := metadata[key]; ok {
-		switch typed := v.(type) {
-		case string:
-			return strings.TrimSpace(typed)
-		case []byte:
-			return strings.TrimSpace(string(typed))
-		}
-	}
-	return ""
-}
-
-func int64Value(value any) (int64, bool) {
-	switch typed := value.(type) {
-	case int:
-		return int64(typed), true
-	case int64:
-		return typed, true
-	case float64:
-		return int64(typed), true
-	case json.Number:
-		if i, errParse := typed.Int64(); errParse == nil {
-			return i, true
-		}
-	case string:
-		if strings.TrimSpace(typed) == "" {
-			return 0, false
-		}
-		if i, errParse := strconv.ParseInt(strings.TrimSpace(typed), 10, 64); errParse == nil {
-			return i, true
-		}
-	}
-	return 0, false
 }
 
 func buildBaseURL(auth *provider.Auth) string {
@@ -577,28 +514,13 @@ func buildBaseURL(auth *provider.Auth) string {
 	return AntigravityBaseURLDaily
 }
 
-func resolveHost(base string) string {
-	parsed, errParse := url.Parse(base)
-	if errParse != nil {
-		return ""
-	}
-	if parsed.Host != "" {
-		return parsed.Host
-	}
-	return strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://")
-}
-
 func resolveUserAgent(auth *provider.Auth) string {
 	if auth != nil {
-		if auth.Attributes != nil {
-			if ua := strings.TrimSpace(auth.Attributes["user_agent"]); ua != "" {
-				return ua
-			}
+		if ua := AttrStringValue(auth.Attributes, "user_agent"); ua != "" {
+			return ua
 		}
-		if auth.Metadata != nil {
-			if ua, ok := auth.Metadata["user_agent"].(string); ok && strings.TrimSpace(ua) != "" {
-				return strings.TrimSpace(ua)
-			}
+		if ua := MetaStringValue(auth.Metadata, "user_agent"); ua != "" {
+			return ua
 		}
 	}
 	return DefaultAntigravityUserAgent
@@ -618,18 +540,11 @@ func resolveCustomAntigravityBaseURL(auth *provider.Auth) string {
 	if auth == nil {
 		return ""
 	}
-	if auth.Attributes != nil {
-		if v := strings.TrimSpace(auth.Attributes["base_url"]); v != "" {
-			return strings.TrimSuffix(v, "/")
-		}
+	if v := AttrStringValue(auth.Attributes, "base_url"); v != "" {
+		return strings.TrimSuffix(v, "/")
 	}
-	if auth.Metadata != nil {
-		if v, ok := auth.Metadata["base_url"].(string); ok {
-			v = strings.TrimSpace(v)
-			if v != "" {
-				return strings.TrimSuffix(v, "/")
-			}
-		}
+	if v := MetaStringValue(auth.Metadata, "base_url"); v != "" {
+		return strings.TrimSuffix(v, "/")
 	}
 	return ""
 }

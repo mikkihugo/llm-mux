@@ -21,21 +21,11 @@ func ParseClaudeRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 		Model: parsed.Get("model").String(),
 	}
 
-	if v := parsed.Get("max_tokens"); v.Exists() {
-		req.MaxTokens = ir.Ptr(int(v.Int()))
-	}
-	if v := parsed.Get("temperature"); v.Exists() {
-		req.Temperature = ir.Ptr(v.Float())
-	}
-	if v := parsed.Get("top_p"); v.Exists() {
-		req.TopP = ir.Ptr(v.Float())
-	}
-	if v := parsed.Get("top_k"); v.Exists() {
-		req.TopK = ir.Ptr(int(v.Int()))
-	}
-	for _, s := range parsed.Get("stop_sequences").Array() {
-		req.StopSequences = append(req.StopSequences, s.String())
-	}
+	req.MaxTokens = ir.ExtractMaxTokens(parsed, "max_tokens")
+	req.Temperature = ir.ExtractTemperature(parsed)
+	req.TopP = ir.ExtractTopP(parsed)
+	req.TopK = ir.ExtractTopK(parsed)
+	req.StopSequences = ir.ExtractStopSequences(parsed, "stop_sequences")
 
 	if system := parsed.Get("system"); system.Exists() {
 		var text string

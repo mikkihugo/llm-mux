@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"gopkg.in/yaml.v3"
 )
 
@@ -427,8 +428,9 @@ func SaveConfigPreserveComments(configFile string, cfg *Config) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
+	buf := ir.GetBuffer()
+	defer ir.PutBuffer(buf)
+	enc := yaml.NewEncoder(buf)
 	enc.SetIndent(2)
 	if err = enc.Encode(&original); err != nil {
 		_ = enc.Close()
@@ -489,8 +491,9 @@ func SaveConfigPreserveCommentsUpdateNestedScalar(configFile string, path []stri
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
+	buf := ir.GetBuffer()
+	defer ir.PutBuffer(buf)
+	enc := yaml.NewEncoder(buf)
 	enc.SetIndent(2)
 	if err = enc.Encode(&root); err != nil {
 		_ = enc.Close()

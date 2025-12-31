@@ -11,7 +11,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/api/handlers/format/gemini"
 	"github.com/nghyane/llm-mux/internal/api/handlers/format/openai"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // localhostOnlyMiddleware returns a middleware that dynamically checks the module's

@@ -7,7 +7,7 @@ import (
 
 	"github.com/nghyane/llm-mux/internal/auth/login"
 	"github.com/nghyane/llm-mux/internal/config"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // DoQwenLogin handles the Qwen device flow using the shared authentication manager.

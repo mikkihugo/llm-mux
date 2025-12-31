@@ -21,7 +21,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/util"
 	"github.com/nghyane/llm-mux/internal/watcher"
 	"github.com/nghyane/llm-mux/internal/wsrelay"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // Service wraps the proxy server lifecycle so external programs can embed the CLI proxy.

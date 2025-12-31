@@ -17,7 +17,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"github.com/tiktoken-go/tokenizer"
@@ -527,17 +527,15 @@ func applyCodexHeaders(r *http.Request, auth *provider.Auth, token string) {
 	r.Header.Set("Connection", "Keep-Alive")
 
 	isAPIKey := false
-	if auth != nil && auth.Attributes != nil {
-		if v := strings.TrimSpace(auth.Attributes["api_key"]); v != "" {
+	if auth != nil {
+		if v := AttrStringValue(auth.Attributes, "api_key"); v != "" {
 			isAPIKey = true
 		}
 	}
 	if !isAPIKey {
 		r.Header.Set("Originator", "codex_cli_rs")
-		if auth != nil && auth.Metadata != nil {
-			if accountID, ok := auth.Metadata["account_id"].(string); ok {
-				r.Header.Set("Chatgpt-Account-Id", accountID)
-			}
+		if accountID := MetaStringValue(auth.Metadata, "account_id"); accountID != "" {
+			r.Header.Set("Chatgpt-Account-Id", accountID)
 		}
 	}
 	var attrs map[string]string

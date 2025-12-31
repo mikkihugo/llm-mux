@@ -14,12 +14,35 @@ import (
 )
 
 // RoundRobinSelector provides a simple provider scoped round-robin selection strategy.
+// It uses a sharded StickyStore for 60-second sticky sessions to maintain conversation continuity.
 type RoundRobinSelector struct {
-	mu      sync.Mutex
-	cursors map[string]int
+	cursorMu sync.Mutex
+	cursors  map[string]int
+	sticky   *StickyStore
+}
+
+// Start launches the background cleanup goroutine for sticky sessions.
+func (s *RoundRobinSelector) Start() {
+	if s.sticky == nil {
+		s.sticky = NewStickyStore()
+	}
+	s.sticky.Start()
+}
+
+// Stop gracefully shuts down the background cleanup goroutine.
+func (s *RoundRobinSelector) Stop() {
+	if s.sticky != nil {
+		s.sticky.Stop()
+	}
 }
 
 type blockReason int
+
+// SelectorLifecycle is optionally implemented by Selectors needing lifecycle management.
+type SelectorLifecycle interface {
+	Start()
+	Stop()
+}
 
 const (
 	blockReasonNone blockReason = iota
@@ -100,13 +123,20 @@ func (e *modelCooldownError) Headers() http.Header {
 // Pick selects the next available auth for the provider in a round-robin manner.
 func (s *RoundRobinSelector) Pick(ctx context.Context, provider, model string, opts Options, auths []*Auth) (*Auth, error) {
 	_ = ctx
-	_ = opts
 	if len(auths) == 0 {
 		return nil, &Error{Code: "auth_not_found", Message: "no auth candidates"}
 	}
+
+	s.cursorMu.Lock()
 	if s.cursors == nil {
 		s.cursors = make(map[string]int)
 	}
+	if s.sticky == nil {
+		s.sticky = NewStickyStore()
+		s.sticky.Start()
+	}
+	s.cursorMu.Unlock()
+
 	available := make([]*Auth, 0, len(auths))
 	now := time.Now()
 	cooldownCount := 0
@@ -135,22 +165,32 @@ func (s *RoundRobinSelector) Pick(ctx context.Context, provider, model string, o
 		}
 		return nil, &Error{Code: "auth_unavailable", Message: "no auth available"}
 	}
-	// Make round-robin deterministic even if caller's candidate order is unstable.
 	if len(available) > 1 {
 		sort.Slice(available, func(i, j int) bool { return available[i].ID < available[j].ID })
 	}
 	key := provider + ":" + model
-	s.mu.Lock()
-	index := s.cursors[key]
 
-	// Reset counter if approaching int overflow or if negative (wraparound occurred)
+	if !opts.ForceRotate {
+		if authID, ok := s.sticky.Get(key); ok {
+			for _, auth := range available {
+				if auth.ID == authID {
+					return auth, nil
+				}
+			}
+		}
+	}
+
+	s.cursorMu.Lock()
+	index := s.cursors[key]
 	if index >= 1_000_000_000 || index < 0 {
 		index = 0
 	}
-
 	s.cursors[key] = index + 1
-	s.mu.Unlock()
-	return available[index%len(available)], nil
+	s.cursorMu.Unlock()
+
+	selected := available[index%len(available)]
+	s.sticky.Set(key, selected.ID)
+	return selected, nil
 }
 
 func isAuthBlockedForModel(auth *Auth, model string, now time.Time) (bool, blockReason, time.Time) {

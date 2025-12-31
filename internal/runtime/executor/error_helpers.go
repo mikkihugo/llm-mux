@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/nghyane/llm-mux/internal/provider"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 type HTTPErrorResult struct {

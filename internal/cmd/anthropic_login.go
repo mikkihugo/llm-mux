@@ -9,7 +9,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/auth/claude"
 	"github.com/nghyane/llm-mux/internal/auth/login"
 	"github.com/nghyane/llm-mux/internal/config"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // DoClaudeLogin triggers the Claude OAuth flow through the shared authentication manager.

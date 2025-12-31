@@ -179,10 +179,8 @@ func resolveUsageSource(auth *provider.Auth, ctxAPIKey string) string {
 				}
 			}
 		}
-		if auth.Attributes != nil {
-			if key := strings.TrimSpace(auth.Attributes["api_key"]); key != "" {
-				return key
-			}
+		if key := AttrStringValue(auth.Attributes, "api_key"); key != "" {
+			return key
 		}
 	}
 	if trimmed := strings.TrimSpace(ctxAPIKey); trimmed != "" {

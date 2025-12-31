@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/gjson"
 )
 
@@ -343,10 +343,24 @@ func ParseQuotaRetryDelay(errorBody []byte) *time.Duration {
 		}
 
 		if typeVal == "type.googleapis.com/google.rpc.ErrorInfo" {
+			// Try quotaResetDelay first (duration string like "30s")
 			quotaDelay := detail.Get("metadata.quotaResetDelay").String()
 			if quotaDelay != "" {
 				if duration, err := time.ParseDuration(quotaDelay); err == nil && duration > 0 {
 					quotaResetDelay = &duration
+				}
+			}
+
+			// Also try quotaInfo.resetTime (ISO timestamp from gcli2api pattern)
+			if quotaResetDelay == nil {
+				resetTime := detail.Get("metadata.quotaInfo.resetTime").String()
+				if resetTime != "" {
+					if parsed, err := time.Parse(time.RFC3339, resetTime); err == nil {
+						duration := time.Until(parsed)
+						if duration > 0 {
+							quotaResetDelay = &duration
+						}
+					}
 				}
 			}
 		}

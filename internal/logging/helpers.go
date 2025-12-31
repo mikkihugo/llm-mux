@@ -1,56 +1,25 @@
-package util
+package logging
 
 import (
-	"fmt"
-	"log/slog"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
-
-	"github.com/nghyane/llm-mux/internal/registry"
 )
 
-func GetProviderName(modelName string) []string {
-	if modelName == "" {
-		slog.Debug("GetProviderName: empty modelName")
-		return nil
+func writablePath() string {
+	for _, key := range []string{"WRITABLE_PATH", "writable_path"} {
+		if value, ok := os.LookupEnv(key); ok {
+			trimmed := strings.TrimSpace(value)
+			if trimmed != "" {
+				return filepath.Clean(trimmed)
+			}
+		}
 	}
-
-	normalizer := registry.NewModelIDNormalizer()
-	cleanModelName := normalizer.NormalizeModelID(modelName)
-	slog.Debug(fmt.Sprintf("GetProviderName: modelName=%s, cleanModelName=%s", modelName, cleanModelName))
-
-	modelProviders := registry.GetGlobalRegistry().GetModelProviders(cleanModelName)
-	slog.Debug(fmt.Sprintf("GetProviderName: modelProviders=%v", modelProviders))
-
-	return modelProviders
+	return ""
 }
 
-func NormalizeIncomingModelID(modelID string) string {
-	normalizer := registry.NewModelIDNormalizer()
-	return normalizer.NormalizeModelID(modelID)
-}
-
-func ExtractProviderFromPrefixedModelID(modelID string) string {
-	normalizer := registry.NewModelIDNormalizer()
-	return normalizer.ExtractProviderFromPrefixedID(modelID)
-}
-
-func ResolveAutoModel(modelName string) string {
-	if modelName != "auto" {
-		return modelName
-	}
-
-	firstModel, err := registry.GetGlobalRegistry().GetFirstAvailableModel("")
-	if err != nil {
-		slog.Warn(fmt.Sprintf("Failed to resolve 'auto' model: %v, falling back to original model name", err))
-		return modelName
-	}
-
-	slog.Info(fmt.Sprintf("Resolved 'auto' model to: %s", firstModel))
-	return firstModel
-}
-
-func HideAPIKey(apiKey string) string {
+func hideAPIKey(apiKey string) string {
 	if len(apiKey) > 8 {
 		return apiKey[:4] + "..." + apiKey[len(apiKey)-4:]
 	} else if len(apiKey) > 4 {
@@ -61,30 +30,30 @@ func HideAPIKey(apiKey string) string {
 	return apiKey
 }
 
-func MaskAuthorizationHeader(value string) string {
+func maskAuthorizationHeader(value string) string {
 	parts := strings.SplitN(strings.TrimSpace(value), " ", 2)
 	if len(parts) < 2 {
-		return HideAPIKey(value)
+		return hideAPIKey(value)
 	}
-	return parts[0] + " " + HideAPIKey(parts[1])
+	return parts[0] + " " + hideAPIKey(parts[1])
 }
 
-func MaskSensitiveHeaderValue(key, value string) string {
+func maskSensitiveHeaderValue(key, value string) string {
 	lowerKey := strings.ToLower(strings.TrimSpace(key))
 	switch {
 	case strings.Contains(lowerKey, "authorization"):
-		return MaskAuthorizationHeader(value)
+		return maskAuthorizationHeader(value)
 	case strings.Contains(lowerKey, "api-key"),
 		strings.Contains(lowerKey, "apikey"),
 		strings.Contains(lowerKey, "token"),
 		strings.Contains(lowerKey, "secret"):
-		return HideAPIKey(value)
+		return hideAPIKey(value)
 	default:
 		return value
 	}
 }
 
-func MaskSensitiveQuery(raw string) string {
+func maskSensitiveQuery(raw string) string {
 	if raw == "" {
 		return ""
 	}
@@ -111,7 +80,7 @@ func MaskSensitiveQuery(raw string) string {
 		if err != nil {
 			decodedValue = valuePart
 		}
-		masked := HideAPIKey(strings.TrimSpace(decodedValue))
+		masked := hideAPIKey(strings.TrimSpace(decodedValue))
 		parts[i] = keyPart + "=" + url.QueryEscape(masked)
 		changed = true
 	}

@@ -12,24 +12,22 @@ import (
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/provider"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/sjson"
 )
 
 type OpenAICompatExecutor struct {
-	provider string
 	cfg      *config.Config
+	provider string
 }
 
 func NewOpenAICompatExecutor(provider string, cfg *config.Config) *OpenAICompatExecutor {
-	return &OpenAICompatExecutor{provider: provider, cfg: cfg}
+	return &OpenAICompatExecutor{cfg: cfg, provider: provider}
 }
 
 func (e *OpenAICompatExecutor) Identifier() string { return e.provider }
 
-func (e *OpenAICompatExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error {
-	return nil
-}
+func (e *OpenAICompatExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error { return nil }
 
 func (e *OpenAICompatExecutor) Execute(ctx context.Context, auth *provider.Auth, req provider.Request, opts provider.Options) (resp provider.Response, err error) {
 	reporter := newUsageReporter(ctx, e.Identifier(), req.Model, auth)
@@ -201,10 +199,8 @@ func (e *OpenAICompatExecutor) resolveCredentials(auth *provider.Auth) (baseURL,
 	if auth == nil {
 		return "", ""
 	}
-	if auth.Attributes != nil {
-		baseURL = strings.TrimSpace(auth.Attributes["base_url"])
-		apiKey = strings.TrimSpace(auth.Attributes["api_key"])
-	}
+	baseURL = AttrStringValue(auth.Attributes, "base_url")
+	apiKey = AttrStringValue(auth.Attributes, "api_key")
 	return
 }
 
@@ -239,13 +235,11 @@ func (e *OpenAICompatExecutor) resolveCompatConfig(auth *provider.Auth) *config.
 		return nil
 	}
 	candidates := make([]string, 0, 3)
-	if auth.Attributes != nil {
-		if v := strings.TrimSpace(auth.Attributes["compat_name"]); v != "" {
-			candidates = append(candidates, v)
-		}
-		if v := strings.TrimSpace(auth.Attributes["provider_key"]); v != "" {
-			candidates = append(candidates, v)
-		}
+	if v := AttrStringValue(auth.Attributes, "compat_name"); v != "" {
+		candidates = append(candidates, v)
+	}
+	if v := AttrStringValue(auth.Attributes, "provider_key"); v != "" {
+		candidates = append(candidates, v)
 	}
 	if v := strings.TrimSpace(auth.Provider); v != "" {
 		candidates = append(candidates, v)

@@ -38,21 +38,11 @@ func ParseGeminiRequest(rawJSON []byte) (*ir.UnifiedChatRequest, error) {
 	}
 
 	if gc := parsed.Get("generationConfig"); gc.Exists() {
-		if v := gc.Get("maxOutputTokens"); v.Exists() {
-			req.MaxTokens = ir.Ptr(int(v.Int()))
-		}
-		if v := gc.Get("temperature"); v.Exists() {
-			req.Temperature = ir.Ptr(v.Float())
-		}
-		if v := gc.Get("topP"); v.Exists() {
-			req.TopP = ir.Ptr(v.Float())
-		}
-		if v := gc.Get("topK"); v.Exists() {
-			req.TopK = ir.Ptr(int(v.Int()))
-		}
-		for _, s := range gc.Get("stopSequences").Array() {
-			req.StopSequences = append(req.StopSequences, s.String())
-		}
+		req.MaxTokens = ir.ExtractMaxTokens(gc, "maxOutputTokens")
+		req.Temperature = ir.ExtractTemperature(gc)
+		req.TopP = ir.ExtractTopP(gc, "topP")
+		req.TopK = ir.ExtractTopK(gc, "topK")
+		req.StopSequences = ir.ExtractStopSequences(gc, "stopSequences")
 
 		if tc := gc.Get("thinkingConfig"); tc.Exists() {
 			req.Thinking = &ir.ThinkingConfig{

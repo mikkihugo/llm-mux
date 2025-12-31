@@ -18,7 +18,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -478,11 +478,8 @@ func (e *ClaudeExecutor) resolveClaudeConfig(auth *provider.Auth) *config.Provid
 	if auth == nil || e.cfg == nil {
 		return nil
 	}
-	var attrKey, attrBase string
-	if auth.Attributes != nil {
-		attrKey = strings.TrimSpace(auth.Attributes["api_key"])
-		attrBase = strings.TrimSpace(auth.Attributes["base_url"])
-	}
+	attrKey := AttrStringValue(auth.Attributes, "api_key")
+	attrBase := AttrStringValue(auth.Attributes, "base_url")
 	for i := range e.cfg.Providers {
 		p := &e.cfg.Providers[i]
 		if p.Type != config.ProviderTypeAnthropic {

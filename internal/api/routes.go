@@ -16,7 +16,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/api/handlers/format/ollama"
 	"github.com/nghyane/llm-mux/internal/api/handlers/format/openai"
 	"github.com/nghyane/llm-mux/internal/oauth"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // setupRoutes configures the API routes for the server.

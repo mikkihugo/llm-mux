@@ -31,17 +31,12 @@ type cachedCopilotToken struct {
 }
 
 func NewGitHubCopilotExecutor(cfg *config.Config) *GitHubCopilotExecutor {
-	return &GitHubCopilotExecutor{
-		cfg:   cfg,
-		cache: make(map[string]*cachedCopilotToken),
-	}
+	return &GitHubCopilotExecutor{cfg: cfg, cache: make(map[string]*cachedCopilotToken)}
 }
 
 func (e *GitHubCopilotExecutor) Identifier() string { return GitHubCopilotAuthType }
 
-func (e *GitHubCopilotExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error {
-	return nil
-}
+func (e *GitHubCopilotExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error { return nil }
 
 func (e *GitHubCopilotExecutor) Execute(ctx context.Context, auth *provider.Auth, req provider.Request, opts provider.Options) (resp provider.Response, err error) {
 	apiToken, errToken := e.ensureAPIToken(ctx, auth)
@@ -165,7 +160,7 @@ func (e *GitHubCopilotExecutor) Refresh(ctx context.Context, auth *provider.Auth
 		return nil, NewStatusError(http.StatusUnauthorized, "missing auth", nil)
 	}
 
-	accessToken := metaStringValue(auth.Metadata, "access_token")
+	accessToken := MetaStringValue(auth.Metadata, "access_token")
 	if accessToken == "" {
 		return auth, nil
 	}
@@ -184,7 +179,7 @@ func (e *GitHubCopilotExecutor) ensureAPIToken(ctx context.Context, auth *provid
 		return "", NewStatusError(http.StatusUnauthorized, "missing auth", nil)
 	}
 
-	accessToken := metaStringValue(auth.Metadata, "access_token")
+	accessToken := MetaStringValue(auth.Metadata, "access_token")
 	if accessToken == "" {
 		return "", NewStatusError(http.StatusUnauthorized, "missing github access token", nil)
 	}

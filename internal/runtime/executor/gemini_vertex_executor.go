@@ -17,7 +17,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/sjson"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -111,9 +111,7 @@ func NewGeminiVertexExecutor(cfg *config.Config) *GeminiVertexExecutor {
 
 func (e *GeminiVertexExecutor) Identifier() string { return "vertex" }
 
-func (e *GeminiVertexExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error {
-	return nil
-}
+func (e *GeminiVertexExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error { return nil }
 
 func (e *GeminiVertexExecutor) resolveStrategy(auth *provider.Auth) (VertexAuthStrategy, error) {
 	apiKey, baseURL := vertexAPICreds(auth)

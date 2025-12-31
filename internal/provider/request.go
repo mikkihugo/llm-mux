@@ -22,6 +22,7 @@ type Options struct {
 	OriginalRequest []byte
 	SourceFormat    Format
 	Metadata        map[string]any
+	ForceRotate     bool
 }
 
 // Response wraps either a full provider response or metadata for streaming flows.

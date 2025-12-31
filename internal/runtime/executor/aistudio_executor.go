@@ -16,26 +16,24 @@ import (
 	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
 	"github.com/nghyane/llm-mux/internal/wsrelay"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
 type AIStudioExecutor struct {
+	cfg      *config.Config
 	provider string
 	relay    *wsrelay.Manager
-	cfg      *config.Config
 }
 
 func NewAIStudioExecutor(cfg *config.Config, provider string, relay *wsrelay.Manager) *AIStudioExecutor {
-	return &AIStudioExecutor{provider: strings.ToLower(provider), relay: relay, cfg: cfg}
+	return &AIStudioExecutor{cfg: cfg, provider: strings.ToLower(provider), relay: relay}
 }
 
 func (e *AIStudioExecutor) Identifier() string { return "aistudio" }
 
-func (e *AIStudioExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error {
-	return nil
-}
+func (e *AIStudioExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error { return nil }
 
 func (e *AIStudioExecutor) Execute(ctx context.Context, auth *provider.Auth, req provider.Request, opts provider.Options) (resp provider.Response, err error) {
 	reporter := newUsageReporter(ctx, e.Identifier(), req.Model, auth)

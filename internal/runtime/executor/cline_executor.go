@@ -12,24 +12,18 @@ import (
 	clineauth "github.com/nghyane/llm-mux/internal/auth/cline"
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/provider"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 type ClineExecutor struct {
 	cfg *config.Config
 }
 
-func NewClineExecutor(cfg *config.Config) *ClineExecutor {
-	return &ClineExecutor{cfg: cfg}
-}
+func NewClineExecutor(cfg *config.Config) *ClineExecutor { return &ClineExecutor{cfg: cfg} }
 
-func (e *ClineExecutor) Identifier() string {
-	return "cline"
-}
+func (e *ClineExecutor) Identifier() string { return "cline" }
 
-func (e *ClineExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error {
-	return nil
-}
+func (e *ClineExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error { return nil }
 
 func (e *ClineExecutor) Execute(ctx context.Context, auth *provider.Auth, req provider.Request, opts provider.Options) (resp provider.Response, err error) {
 	token, baseURL := clineCredentials(auth)

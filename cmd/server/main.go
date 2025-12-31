@@ -29,7 +29,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/store"
 	"github.com/nghyane/llm-mux/internal/usage"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	flag "github.com/spf13/pflag"
 )
 

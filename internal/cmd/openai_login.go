@@ -9,7 +9,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/auth/codex"
 	"github.com/nghyane/llm-mux/internal/auth/login"
 	"github.com/nghyane/llm-mux/internal/config"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // LoginOptions contains options for the login processes.

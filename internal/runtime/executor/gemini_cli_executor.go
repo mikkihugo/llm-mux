@@ -18,7 +18,7 @@ import (
 	"github.com/nghyane/llm-mux/internal/provider"
 	"github.com/nghyane/llm-mux/internal/registry"
 	"github.com/nghyane/llm-mux/internal/runtime/geminicli"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/sjson"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -39,9 +39,7 @@ type GeminiCLIExecutor struct {
 	cfg *config.Config
 }
 
-func NewGeminiCLIExecutor(cfg *config.Config) *GeminiCLIExecutor {
-	return &GeminiCLIExecutor{cfg: cfg}
-}
+func NewGeminiCLIExecutor(cfg *config.Config) *GeminiCLIExecutor { return &GeminiCLIExecutor{cfg: cfg} }
 
 func (e *GeminiCLIExecutor) Identifier() string { return "gemini-cli" }
 
@@ -72,7 +70,7 @@ func (e *GeminiCLIExecutor) Execute(ctx context.Context, auth *provider.Auth, re
 	projectID := resolveGeminiProjectID(auth)
 	models := []string{req.Model}
 
-	httpClient := newHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := newProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
 
 	var lastStatus int
 	var lastBody []byte
@@ -204,7 +202,7 @@ func (e *GeminiCLIExecutor) ExecuteStream(ctx context.Context, auth *provider.Au
 	projectID := resolveGeminiProjectID(auth)
 	models := []string{req.Model}
 
-	httpClient := newHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := newProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
 
 	var lastStatus int
 	var lastBody []byte
@@ -320,7 +318,7 @@ func (e *GeminiCLIExecutor) CountTokens(ctx context.Context, auth *provider.Auth
 	from := opts.SourceFormat
 	models := []string{req.Model}
 
-	httpClient := newHTTPClient(ctx, e.cfg, auth, 0)
+	httpClient := newProxyAwareHTTPClient(ctx, e.cfg, auth, 0)
 
 	var lastStatus int
 	var lastBody []byte
@@ -421,7 +419,7 @@ func prepareGeminiCLITokenSource(ctx context.Context, cfg *config.Config, auth *
 
 	var base map[string]any
 	if tokenRaw, ok := metadata["token"].(map[string]any); ok && tokenRaw != nil {
-		base = cloneMap(tokenRaw)
+		base = CloneMap(tokenRaw)
 	} else {
 		base = make(map[string]any)
 	}
@@ -494,7 +492,7 @@ func updateGeminiCLITokenMetadata(auth *provider.Auth, base map[string]any, tok 
 }
 
 func buildGeminiTokenMap(base map[string]any, tok *oauth2.Token) map[string]any {
-	merged := cloneMap(base)
+	merged := CloneMap(base)
 	if merged == nil {
 		merged = make(map[string]any)
 	}
@@ -524,7 +522,7 @@ func buildGeminiTokenFields(tok *oauth2.Token, merged map[string]any) map[string
 		fields["expiry"] = tok.Expiry.Format(time.RFC3339)
 	}
 	if len(merged) > 0 {
-		fields["token"] = cloneMap(merged)
+		fields["token"] = CloneMap(merged)
 	}
 	return fields
 }
@@ -556,21 +554,6 @@ func geminiOAuthMetadata(auth *provider.Auth) map[string]any {
 		}
 	}
 	return auth.Metadata
-}
-
-func newHTTPClient(ctx context.Context, cfg *config.Config, auth *provider.Auth, timeout time.Duration) *http.Client {
-	return newProxyAwareHTTPClient(ctx, cfg, auth, timeout)
-}
-
-func cloneMap(in map[string]any) map[string]any {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]any, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
 
 func stringValue(m map[string]any, key string) string {
@@ -656,7 +639,7 @@ func FetchGeminiCLIModels(ctx context.Context, auth *provider.Auth, cfg *config.
 		return nil
 	}
 
-	httpClient := newHTTPClient(ctx, cfg, auth, 0)
+	httpClient := newProxyAwareHTTPClient(ctx, cfg, auth, 0)
 
 	fetchCfg := CloudCodeFetchConfig{
 		BaseURLs:     []string{codeAssistEndpoint},

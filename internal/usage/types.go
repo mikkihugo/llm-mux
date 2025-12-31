@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/nghyane/llm-mux/internal/translator/ir"
-	log "github.com/sirupsen/logrus"
+	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 // Record contains the usage statistics captured for a single provider request.
