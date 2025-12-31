@@ -3,10 +3,10 @@ package executor
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"time"
 
 	log "github.com/nghyane/llm-mux/internal/logging"
+	"github.com/nghyane/llm-mux/internal/resilience"
 	"github.com/tidwall/gjson"
 )
 
@@ -209,18 +209,8 @@ func (h *RetryHandler) calculateDelay(body []byte) time.Duration {
 }
 
 func (h *RetryHandler) calculateDelayForError() time.Duration {
-	delay := h.config.BaseDelay * time.Duration(1<<h.retrier.retryCount)
-	if delay > h.config.MaxDelay {
-		delay = h.config.MaxDelay
-	}
-	if delay > 0 {
-		jitter := time.Duration(rand.Int63n(int64(delay) / 4))
-		delay += jitter
-		if delay > h.config.MaxDelay {
-			delay = h.config.MaxDelay
-		}
-	}
-	return delay
+	jitter := h.config.MaxDelay / 4
+	return resilience.CalculateBackoff(h.retrier.retryCount, h.config.BaseDelay, h.config.MaxDelay, jitter)
 }
 
 type rateLimitRetrier struct {
@@ -260,19 +250,13 @@ func (r *rateLimitRetrier) handleRateLimit(ctx context.Context, hasNextModel boo
 
 func (r *rateLimitRetrier) calculateDelay(errorBody []byte) time.Duration {
 	if serverDelay, err := parseRetryDelay(errorBody); err == nil && serverDelay != nil {
-		delay := *serverDelay
-		delay += 500 * time.Millisecond
+		delay := *serverDelay + 500*time.Millisecond
 		if delay > RateLimitMaxDelay {
 			delay = RateLimitMaxDelay
 		}
 		return delay
 	}
-
-	delay := RateLimitBaseDelay * time.Duration(1<<r.retryCount)
-	if delay > RateLimitMaxDelay {
-		delay = RateLimitMaxDelay
-	}
-	return delay
+	return resilience.CalculateBackoff(r.retryCount, RateLimitBaseDelay, RateLimitMaxDelay, 0)
 }
 
 func parseRetryDelay(errorBody []byte) (*time.Duration, error) {

@@ -9,9 +9,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nghyane/llm-mux/internal/registry"
 	log "github.com/nghyane/llm-mux/internal/logging"
+	"github.com/nghyane/llm-mux/internal/registry"
+	"github.com/nghyane/llm-mux/internal/resilience"
+	"github.com/sony/gobreaker"
 )
+
+func init() {
+	resilience.DefaultIsSuccessful = func(err error) bool {
+		if err == nil {
+			return true
+		}
+		cat := CategorizeError(0, err.Error())
+		return cat.IsUserFault()
+	}
+}
 
 // ProviderExecutor defines the contract required by Manager to execute provider calls.
 type ProviderExecutor interface {
@@ -84,19 +96,18 @@ type Manager struct {
 	mu        sync.RWMutex
 	auths     map[string]*Auth
 
-	// Provider balancing: atomic counter for round-robin + stats for weighted selection
-	providerCounter atomic.Uint64  // Global atomic counter (lock-free)
-	providerStats   *ProviderStats // Performance-based provider selection
+	providerCounter atomic.Uint64
+	providerStats   *ProviderStats
 
-	// Retry controls request retry behavior.
 	requestRetry     atomic.Int32
 	maxRetryInterval atomic.Int64
 
-	// Optional HTTP RoundTripper provider injected by host.
 	rtProvider RoundTripperProvider
 
-	// Auto refresh state
 	refreshCancel context.CancelFunc
+
+	breakerMu sync.RWMutex
+	breakers  map[string]*resilience.CircuitBreaker
 }
 
 // NewManager constructs a manager with optional custom selector and hook.
@@ -114,6 +125,7 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 		hook:          hook,
 		auths:         make(map[string]*Auth),
 		providerStats: NewProviderStats(),
+		breakers:      make(map[string]*resilience.CircuitBreaker),
 	}
 	if lc, ok := selector.(SelectorLifecycle); ok {
 		lc.Start()
@@ -753,4 +765,37 @@ func (m *Manager) InjectCredentials(req *http.Request, authID string) error {
 		return p.PrepareRequest(req, a)
 	}
 	return nil
+}
+
+func (m *Manager) getOrCreateBreaker(provider string) *resilience.CircuitBreaker {
+	m.breakerMu.RLock()
+	if cb, ok := m.breakers[provider]; ok {
+		m.breakerMu.RUnlock()
+		return cb
+	}
+	m.breakerMu.RUnlock()
+
+	m.breakerMu.Lock()
+	defer m.breakerMu.Unlock()
+	if cb, ok := m.breakers[provider]; ok {
+		return cb
+	}
+
+	cfg := resilience.DefaultBreakerConfig("provider:" + provider)
+	cfg.OnStateChange = func(name string, from, to gobreaker.State) {
+		log.Infof("circuit breaker %s: %s -> %s", name, from, to)
+	}
+	cb := resilience.NewCircuitBreaker(cfg)
+	m.breakers[provider] = cb
+	return cb
+}
+
+func (m *Manager) BreakerState(provider string) gobreaker.State {
+	m.breakerMu.RLock()
+	cb, ok := m.breakers[provider]
+	m.breakerMu.RUnlock()
+	if !ok {
+		return gobreaker.StateClosed
+	}
+	return cb.State()
 }
