@@ -17,12 +17,13 @@ import (
 	"github.com/nghyane/llm-mux/internal/auth/kiro"
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/constant"
+	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/nghyane/llm-mux/internal/provider"
+	"github.com/nghyane/llm-mux/internal/translator"
 	"github.com/nghyane/llm-mux/internal/translator/from_ir"
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/translator/to_ir"
 	"github.com/nghyane/llm-mux/internal/util"
-	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
 const kiroAPIURL = KiroDefaultBaseURL
@@ -125,7 +126,7 @@ func (e *KiroExecutor) prepareRequest(ctx context.Context, auth *provider.Auth, 
 		rc.irReq.Metadata["profileArn"] = arn
 	}
 
-	rc.kiroBody, err = (&from_ir.KiroProvider{}).ConvertRequest(rc.irReq)
+	rc.kiroBody, err = translator.ConvertRequest("kiro", rc.irReq)
 	return rc, err
 }
 

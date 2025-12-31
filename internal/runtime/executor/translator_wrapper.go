@@ -1,13 +1,13 @@
 package executor
 
 import (
-	"fmt"
 	"github.com/nghyane/llm-mux/internal/json"
 	"strings"
 
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/provider"
 	"github.com/nghyane/llm-mux/internal/registry"
+	"github.com/nghyane/llm-mux/internal/translator"
 	"github.com/nghyane/llm-mux/internal/translator/from_ir"
 	"github.com/nghyane/llm-mux/internal/translator/ir"
 	"github.com/nghyane/llm-mux/internal/translator/to_ir"
@@ -49,7 +49,7 @@ func TranslateToGeminiWithTokens(cfg *config.Config, from provider.Format, model
 		return nil, err
 	}
 
-	geminiJSON, err := (&from_ir.GeminiProvider{}).ConvertRequest(irReq)
+	geminiJSON, err := translator.ConvertRequest("gemini", irReq)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func TranslateToGeminiCLIWithTokens(cfg *config.Config, from provider.Format, mo
 		ir.CleanToolsForAntigravityClaude(irReq)
 	}
 
-	geminiJSON, err := (&from_ir.GeminiCLIProvider{}).ConvertRequest(irReq)
+	geminiJSON, err := translator.ConvertRequest("gemini-cli", irReq)
 	if err != nil {
 		return nil, err
 	}
@@ -181,22 +181,8 @@ func cleanUndefinedRecursive(v any) any {
 func convertRequestToIR(from provider.Format, model string, payload []byte, metadata map[string]any) (*ir.UnifiedChatRequest, error) {
 	payload = sanitizeUndefinedValues(payload)
 
-	var irReq *ir.UnifiedChatRequest
-	var err error
-
-	switch from.String() {
-	case "openai", "cline", "codex", "openai-response":
-		irReq, err = to_ir.ParseOpenAIRequest(payload)
-	case "ollama":
-		irReq, err = to_ir.ParseOllamaRequest(payload)
-	case "claude":
-		irReq, err = to_ir.ParseClaudeRequest(payload)
-	case "gemini", "gemini-cli":
-		irReq, err = to_ir.ParseGeminiRequest(payload)
-	default:
-		return nil, fmt.Errorf("unsupported source format: %s", from.String())
-	}
-
+	formatStr := from.String()
+	irReq, err := translator.ParseRequest(formatStr, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -377,7 +363,7 @@ func TranslateToClaude(cfg *config.Config, from provider.Format, model string, p
 	if err != nil {
 		return nil, err
 	}
-	return (&from_ir.ClaudeProvider{}).ConvertRequest(irReq)
+	return translator.ConvertRequest("claude", irReq)
 }
 
 func TranslateToOpenAI(cfg *config.Config, from provider.Format, model string, payload []byte, streaming bool, metadata map[string]any) ([]byte, error) {

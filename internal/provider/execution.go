@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/nghyane/llm-mux/internal/registry"
+	"github.com/nghyane/llm-mux/internal/telemetry"
+	"github.com/sony/gobreaker"
 )
 
 // ExecuteWithProvider handles non-streaming execution for a single provider, attempting
@@ -15,7 +17,18 @@ func (m *Manager) executeWithProvider(ctx context.Context, provider string, req 
 		return Response{}, &Error{Code: "provider_not_found", Message: "provider identifier is empty"}
 	}
 
-	// Translate canonical model ID to provider-specific ID using registry
+	start := time.Now()
+	ctx, span := telemetry.StartProviderSpan(ctx, provider, req.Model)
+	defer func() {
+		telemetry.RecordLatency(span, start)
+		span.End()
+	}()
+
+	breaker := m.getOrCreateBreaker(provider)
+	if breaker.State() == gobreaker.StateOpen {
+		return Response{}, &Error{Code: "circuit_open", Message: "provider circuit breaker is open"}
+	}
+
 	req.Model = registry.GetGlobalRegistry().GetModelIDForProvider(req.Model, provider)
 
 	tried := make(map[string]struct{})
@@ -23,6 +36,7 @@ func (m *Manager) executeWithProvider(ctx context.Context, provider string, req 
 	for {
 		auth, executor, errPick := m.pickNext(ctx, provider, req.Model, opts, tried)
 		if errPick != nil {
+			telemetry.RecordError(span, errPick)
 			if lastErr != nil {
 				return Response{}, lastErr
 			}
@@ -34,22 +48,31 @@ func (m *Manager) executeWithProvider(ctx context.Context, provider string, req 
 		if rt := m.roundTripperFor(auth); rt != nil {
 			execCtx = context.WithValue(execCtx, roundTripperContextKey{}, rt)
 		}
-		resp, errExec := executor.Execute(execCtx, auth, req, opts)
-		result := Result{AuthID: auth.ID, Provider: provider, Model: req.Model, Success: errExec == nil}
-		if errExec != nil {
-			result.Error = &Error{Message: errExec.Error()}
+
+		authCopy := auth
+		reqCopy := req
+		result, errBreaker := breaker.Execute(func() (any, error) {
+			return executor.Execute(execCtx, authCopy, reqCopy, opts)
+		})
+
+		if errBreaker != nil {
+			telemetry.RecordError(span, errBreaker)
+			markResult := Result{AuthID: auth.ID, Provider: provider, Model: req.Model, Success: false}
+			markResult.Error = &Error{Message: errBreaker.Error()}
 			var se StatusCodeError
-			if errors.As(errExec, &se) && se != nil {
-				result.Error.HTTPStatus = se.StatusCode()
+			if errors.As(errBreaker, &se) && se != nil {
+				markResult.Error.HTTPStatus = se.StatusCode()
 			}
-			if ra := retryAfterFromError(errExec); ra != nil {
-				result.RetryAfter = ra
+			if ra := retryAfterFromError(errBreaker); ra != nil {
+				markResult.RetryAfter = ra
 			}
-			m.MarkResult(execCtx, result)
-			lastErr = errExec
+			m.MarkResult(execCtx, markResult)
+			lastErr = errBreaker
 			continue
 		}
-		m.MarkResult(execCtx, result)
+
+		resp := result.(Response)
+		m.MarkResult(execCtx, Result{AuthID: auth.ID, Provider: provider, Model: req.Model, Success: true})
 		return resp, nil
 	}
 }
@@ -61,7 +84,11 @@ func (m *Manager) executeCountWithProvider(ctx context.Context, provider string,
 		return Response{}, &Error{Code: "provider_not_found", Message: "provider identifier is empty"}
 	}
 
-	// Translate canonical model ID to provider-specific ID using registry
+	breaker := m.getOrCreateBreaker(provider)
+	if breaker.State() == gobreaker.StateOpen {
+		return Response{}, &Error{Code: "circuit_open", Message: "provider circuit breaker is open"}
+	}
+
 	req.Model = registry.GetGlobalRegistry().GetModelIDForProvider(req.Model, provider)
 
 	tried := make(map[string]struct{})
@@ -80,22 +107,30 @@ func (m *Manager) executeCountWithProvider(ctx context.Context, provider string,
 		if rt := m.roundTripperFor(auth); rt != nil {
 			execCtx = context.WithValue(execCtx, roundTripperContextKey{}, rt)
 		}
-		resp, errExec := executor.CountTokens(execCtx, auth, req, opts)
-		result := Result{AuthID: auth.ID, Provider: provider, Model: req.Model, Success: errExec == nil}
-		if errExec != nil {
-			result.Error = &Error{Message: errExec.Error()}
+
+		authCopy := auth
+		reqCopy := req
+		result, errBreaker := breaker.Execute(func() (any, error) {
+			return executor.CountTokens(execCtx, authCopy, reqCopy, opts)
+		})
+
+		if errBreaker != nil {
+			markResult := Result{AuthID: auth.ID, Provider: provider, Model: req.Model, Success: false}
+			markResult.Error = &Error{Message: errBreaker.Error()}
 			var se StatusCodeError
-			if errors.As(errExec, &se) && se != nil {
-				result.Error.HTTPStatus = se.StatusCode()
+			if errors.As(errBreaker, &se) && se != nil {
+				markResult.Error.HTTPStatus = se.StatusCode()
 			}
-			if ra := retryAfterFromError(errExec); ra != nil {
-				result.RetryAfter = ra
+			if ra := retryAfterFromError(errBreaker); ra != nil {
+				markResult.RetryAfter = ra
 			}
-			m.MarkResult(execCtx, result)
-			lastErr = errExec
+			m.MarkResult(execCtx, markResult)
+			lastErr = errBreaker
 			continue
 		}
-		m.MarkResult(execCtx, result)
+
+		resp := result.(Response)
+		m.MarkResult(execCtx, Result{AuthID: auth.ID, Provider: provider, Model: req.Model, Success: true})
 		return resp, nil
 	}
 }
@@ -107,7 +142,11 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 		return nil, &Error{Code: "provider_not_found", Message: "provider identifier is empty"}
 	}
 
-	// Translate canonical model ID to provider-specific ID using registry
+	breaker := m.getOrCreateBreaker(provider)
+	if breaker.State() == gobreaker.StateOpen {
+		return nil, &Error{Code: "circuit_open", Message: "provider circuit breaker is open"}
+	}
+
 	req.Model = registry.GetGlobalRegistry().GetModelIDForProvider(req.Model, provider)
 
 	tried := make(map[string]struct{})
@@ -146,12 +185,9 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 			for {
 				select {
 				case <-streamCtx.Done():
-					// Context cancelled by client - don't count as provider failure
-					// This prevents penalizing providers when users disconnect
 					return
 				case chunk, ok := <-streamChunks:
 					if !ok {
-						// Input channel closed - stream complete
 						if !failed {
 							m.MarkResult(streamCtx, Result{AuthID: streamAuth.ID, Provider: streamProvider, Model: req.Model, Success: true})
 						}
@@ -165,11 +201,9 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 							rerr.HTTPStatus = se.StatusCode()
 						}
 						result := Result{AuthID: streamAuth.ID, Provider: streamProvider, Model: req.Model, Success: false, Error: rerr}
-						// Extract RetryAfter from mid-stream errors for proper quota blocking
 						result.RetryAfter = retryAfterFromError(chunk.Err)
 						m.MarkResult(streamCtx, result)
 					}
-					// Non-blocking send with context check
 					select {
 					case out <- chunk:
 					case <-streamCtx.Done():
