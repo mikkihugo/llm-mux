@@ -3,6 +3,8 @@ package executor
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -576,7 +578,7 @@ func geminiToAntigravity(modelName string, payload []byte, projectID string) []b
 	data["requestId"] = generateRequestID()
 
 	if req, ok := data["request"].(map[string]interface{}); ok {
-		req["session_id"] = "session-" + uuid.NewString()
+		req["session_id"] = deriveStableSessionID(req)
 
 		delete(req, "safetySettings")
 
@@ -746,4 +748,50 @@ func generateProjectID() string {
 	noun := projectIDNouns[int(uuidBytes[1])%len(projectIDNouns)]
 	randomPart := strings.ToLower(uuid.NewString())[:5]
 	return adj + "-" + noun + "-" + randomPart
+}
+
+// deriveStableSessionID generates a stable session ID from the first user message content.
+// This enables prompt caching as cache is scoped to session + organization.
+// Returns "session-{hash32}" where hash32 is first 32 chars of SHA256 hex digest.
+// Falls back to random UUID if no user message content found.
+func deriveStableSessionID(req map[string]interface{}) string {
+	contents, ok := req["contents"].([]interface{})
+	if !ok || len(contents) == 0 {
+		return "session-" + uuid.NewString()
+	}
+
+	for _, content := range contents {
+		contentMap, ok := content.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		role, _ := contentMap["role"].(string)
+		if role != "user" {
+			continue
+		}
+
+		parts, ok := contentMap["parts"].([]interface{})
+		if !ok || len(parts) == 0 {
+			continue
+		}
+
+		var textContent strings.Builder
+		for _, part := range parts {
+			partMap, ok := part.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if text, hasText := partMap["text"].(string); hasText && text != "" {
+				textContent.WriteString(text)
+			}
+		}
+
+		if textContent.Len() > 0 {
+			hash := sha256.Sum256([]byte(textContent.String()))
+			return "session-" + hex.EncodeToString(hash[:])[:32]
+		}
+	}
+
+	return "session-" + uuid.NewString()
 }

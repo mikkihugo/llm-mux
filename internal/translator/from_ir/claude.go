@@ -337,14 +337,22 @@ func ToClaudeResponse(ms []ir.Message, us *ir.Usage, model, mid string) ([]byte,
 		res["stop_reason"] = ir.ClaudeStopToolUse
 	}
 	if us != nil {
-		um := map[string]any{"input_tokens": us.PromptTokens, "output_tokens": us.CompletionTokens}
+		inputTokens := us.PromptTokens
+		var cacheReadTokens int64
+		if us.CacheReadInputTokens > 0 {
+			cacheReadTokens = us.CacheReadInputTokens
+		} else if us.PromptTokensDetails != nil && us.PromptTokensDetails.CachedTokens > 0 {
+			cacheReadTokens = us.PromptTokensDetails.CachedTokens
+		}
+		if cacheReadTokens > 0 {
+			inputTokens -= cacheReadTokens
+		}
+		um := map[string]any{"input_tokens": inputTokens, "output_tokens": us.CompletionTokens}
 		if us.CacheCreationInputTokens > 0 {
 			um["cache_creation_input_tokens"] = us.CacheCreationInputTokens
 		}
-		if us.CacheReadInputTokens > 0 {
-			um["cache_read_input_tokens"] = us.CacheReadInputTokens
-		} else if us.PromptTokensDetails != nil && us.PromptTokensDetails.CachedTokens > 0 {
-			um["cache_read_input_tokens"] = us.PromptTokensDetails.CachedTokens
+		if cacheReadTokens > 0 {
+			um["cache_read_input_tokens"] = cacheReadTokens
 		}
 		res["usage"] = um
 	}
@@ -465,14 +473,21 @@ func emitFinishTo(res *strings.Builder, us *ir.Usage, s *ClaudeStreamState) {
 	}
 	um := map[string]any{"output_tokens": int64(0)}
 	if us != nil {
-		um["output_tokens"], um["input_tokens"] = us.CompletionTokens+int64(us.ThoughtsTokenCount), us.PromptTokens
+		inputTokens := us.PromptTokens
+		var cacheReadTokens int64
+		if us.CacheReadInputTokens > 0 {
+			cacheReadTokens = us.CacheReadInputTokens
+		} else if us.PromptTokensDetails != nil && us.PromptTokensDetails.CachedTokens > 0 {
+			cacheReadTokens = us.PromptTokensDetails.CachedTokens
+		}
+		if cacheReadTokens > 0 {
+			inputTokens -= cacheReadTokens
+			um["cache_read_input_tokens"] = cacheReadTokens
+		}
+		um["output_tokens"] = us.CompletionTokens + int64(us.ThoughtsTokenCount)
+		um["input_tokens"] = inputTokens
 		if us.CacheCreationInputTokens > 0 {
 			um["cache_creation_input_tokens"] = us.CacheCreationInputTokens
-		}
-		if us.CacheReadInputTokens > 0 {
-			um["cache_read_input_tokens"] = us.CacheReadInputTokens
-		} else if us.PromptTokensDetails != nil && us.PromptTokensDetails.CachedTokens > 0 {
-			um["cache_read_input_tokens"] = us.PromptTokensDetails.CachedTokens
 		}
 	}
 	res.WriteString(formatSSE(ir.ClaudeSSEMessageDelta, map[string]any{"type": ir.ClaudeSSEMessageDelta, "delta": map[string]any{"stop_reason": sr}, "usage": um}))
