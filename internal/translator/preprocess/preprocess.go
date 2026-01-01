@@ -16,11 +16,9 @@ func Apply(req *ir.UnifiedChatRequest) error {
 
 	info := registry.GetGlobalRegistry().GetModelInfo(req.Model)
 
-	// Apply in order: thinking → limits → defaults → tools
 	applyThinkingNormalization(req, info)
 	applyLimits(req, info)
 	applyProviderDefaults(req, info)
-	applyToolValidation(req)
 
 	return nil
 }

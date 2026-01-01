@@ -550,6 +550,16 @@ func resolveCustomAntigravityBaseURL(auth *provider.Auth) string {
 	return ""
 }
 
+// defaultAntigravityStopSequences prevents model from hallucinating role markers.
+// These are mandatory for Antigravity IDE models (Gemini/Claude variants).
+var defaultAntigravityStopSequences = []string{
+	"<|user|>",
+	"<|bot|>",
+	"<|context_request|>",
+	"<|endoftext|>",
+	"<|end_of_turn|>",
+}
+
 func geminiToAntigravity(modelName string, payload []byte, projectID string) []byte {
 	var data map[string]interface{}
 	if err := json.Unmarshal(payload, &data); err != nil {
@@ -566,19 +576,13 @@ func geminiToAntigravity(modelName string, payload []byte, projectID string) []b
 	data["requestId"] = generateRequestID()
 
 	if req, ok := data["request"].(map[string]interface{}); ok {
-		req["sessionId"] = generateSessionID()
+		req["session_id"] = "session-" + uuid.NewString()
 
-		if toolConfig, ok := req["toolConfig"].(map[string]interface{}); ok {
-			if funcCallingConfig, ok := toolConfig["functionCallingConfig"].(map[string]interface{}); ok {
-				funcCallingConfig["mode"] = "VALIDATED"
-			} else {
-				toolConfig["functionCallingConfig"] = map[string]interface{}{"mode": "VALIDATED"}
-			}
-		} else {
-			req["toolConfig"] = map[string]interface{}{
-				"functionCallingConfig": map[string]interface{}{"mode": "VALIDATED"},
-			}
-		}
+		delete(req, "safetySettings")
+
+		applyAntigravityGenerationDefaults(req)
+		wrapFunctionDeclarationsIndependently(req)
+		applyToolConfig(req)
 
 		if strings.Contains(modelName, "claude") {
 			convertParametersJsonSchemaForClaude(req)
@@ -594,6 +598,110 @@ func geminiToAntigravity(modelName string, payload []byte, projectID string) []b
 	report.LogDebug()
 
 	return validated
+}
+
+// applyAntigravityGenerationDefaults applies Antigravity-specific generation config defaults.
+func applyAntigravityGenerationDefaults(req map[string]interface{}) {
+	genConfig, ok := req["generationConfig"].(map[string]interface{})
+	if !ok {
+		genConfig = make(map[string]interface{})
+		req["generationConfig"] = genConfig
+	}
+
+	if _, exists := genConfig["topP"]; !exists {
+		genConfig["topP"] = float64(1)
+	}
+	if _, exists := genConfig["topK"]; !exists {
+		genConfig["topK"] = float64(40)
+	}
+	if _, exists := genConfig["candidateCount"]; !exists {
+		genConfig["candidateCount"] = 1
+	}
+	if _, exists := genConfig["temperature"]; !exists {
+		genConfig["temperature"] = 0.4
+	}
+
+	existing := make(map[string]bool)
+	var merged []string
+
+	if stopSeqs, ok := genConfig["stopSequences"].([]interface{}); ok {
+		for _, s := range stopSeqs {
+			if str, ok := s.(string); ok {
+				existing[str] = true
+				merged = append(merged, str)
+			}
+		}
+	}
+
+	for _, seq := range defaultAntigravityStopSequences {
+		if !existing[seq] {
+			merged = append(merged, seq)
+		}
+	}
+
+	genConfig["stopSequences"] = merged
+}
+
+func wrapFunctionDeclarationsIndependently(req map[string]interface{}) {
+	tools, ok := req["tools"].([]interface{})
+	if !ok || len(tools) == 0 {
+		return
+	}
+
+	var allFuncDecls []interface{}
+	var nonFunctionTools []interface{}
+
+	// Collect all function declarations and separate non-function tools
+	for _, tool := range tools {
+		toolMap, ok := tool.(map[string]interface{})
+		if !ok {
+			nonFunctionTools = append(nonFunctionTools, tool)
+			continue
+		}
+
+		funcDecls, hasFuncDecls := toolMap["functionDeclarations"].([]interface{})
+		if hasFuncDecls && len(funcDecls) > 0 {
+			allFuncDecls = append(allFuncDecls, funcDecls...)
+		} else {
+			// Non-function tool (googleSearch, codeExecution, etc.)
+			nonFunctionTools = append(nonFunctionTools, tool)
+		}
+	}
+
+	if len(allFuncDecls) == 0 {
+		return
+	}
+
+	// Create new tools array with each function wrapped independently
+	newTools := make([]interface{}, 0, len(allFuncDecls)+len(nonFunctionTools))
+	for _, funcDecl := range allFuncDecls {
+		newTools = append(newTools, map[string]interface{}{
+			"functionDeclarations": []interface{}{funcDecl},
+		})
+	}
+	newTools = append(newTools, nonFunctionTools...)
+
+	req["tools"] = newTools
+}
+
+func applyToolConfig(req map[string]interface{}) {
+	tools, ok := req["tools"].([]interface{})
+	if !ok || len(tools) == 0 {
+		return
+	}
+
+	for _, tool := range tools {
+		if toolMap, ok := tool.(map[string]interface{}); ok {
+			if _, exists := toolMap["functionDeclarations"]; exists {
+				req["toolConfig"] = map[string]interface{}{
+					"functionCallingConfig": map[string]interface{}{
+						"mode": "VALIDATED",
+					},
+				}
+				return
+			}
+		}
+	}
 }
 
 func convertParametersJsonSchemaForClaude(req map[string]interface{}) {
@@ -624,12 +732,7 @@ func convertParametersJsonSchemaForClaude(req map[string]interface{}) {
 }
 
 func generateRequestID() string {
-	return "agent-" + uuid.NewString()
-}
-
-func generateSessionID() string {
-	uuidStr := uuid.NewString()
-	return "-" + uuidStr[:8] + uuidStr[9:13] + uuidStr[14:18]
+	return "req-" + uuid.NewString()
 }
 
 var (

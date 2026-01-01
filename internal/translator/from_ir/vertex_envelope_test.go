@@ -185,8 +185,9 @@ func TestVertexEnvelopeProvider_ClaudeCoalescesConsecutiveSameRoleMessages(t *te
 				Content: []ir.ContentPart{{Type: ir.ContentTypeText, Text: "Part 2"}},
 			},
 			{
-				Role:    ir.RoleAssistant,
-				Content: []ir.ContentPart{{Type: ir.ContentTypeText, Text: "Response"}},
+				Role:      ir.RoleAssistant,
+				Content:   []ir.ContentPart{{Type: ir.ContentTypeText, Text: "Response"}},
+				ToolCalls: []ir.ToolCall{{ID: "call_1", Name: "search", Args: "{}"}},
 			},
 			{
 				Role: ir.RoleTool,
@@ -212,7 +213,7 @@ func TestVertexEnvelopeProvider_ClaudeCoalescesConsecutiveSameRoleMessages(t *te
 	contents := parsed.Get("request.contents").Array()
 
 	if len(contents) != 3 {
-		t.Fatalf("expected 3 coalesced messages (user, model, user), got %d", len(contents))
+		t.Fatalf("expected 3 messages (user, model, user with functionResponse+text), got %d", len(contents))
 	}
 
 	if contents[0].Get("role").String() != "user" {
@@ -222,17 +223,34 @@ func TestVertexEnvelopeProvider_ClaudeCoalescesConsecutiveSameRoleMessages(t *te
 		t.Error("second message should be model")
 	}
 	if contents[2].Get("role").String() != "user" {
-		t.Error("third message should be user (RoleTool + RoleUser coalesced)")
+		t.Error("third message should be user")
 	}
 
 	firstUserParts := contents[0].Get("parts").Array()
 	if len(firstUserParts) != 2 {
-		t.Errorf("first user message should have 2 parts (coalesced), got %d", len(firstUserParts))
+		t.Errorf("first user message should have 2 parts (coalesced text), got %d", len(firstUserParts))
 	}
 
 	thirdUserParts := contents[2].Get("parts").Array()
 	if len(thirdUserParts) != 2 {
 		t.Errorf("third user message should have 2 parts (functionResponse + text), got %d", len(thirdUserParts))
+	}
+
+	hasFunctionResponse := false
+	hasText := false
+	for _, part := range thirdUserParts {
+		if part.Get("functionResponse").Exists() {
+			hasFunctionResponse = true
+		}
+		if part.Get("text").Exists() {
+			hasText = true
+		}
+	}
+	if !hasFunctionResponse {
+		t.Error("third user message should contain functionResponse")
+	}
+	if !hasText {
+		t.Error("third user message should contain text (follow up)")
 	}
 }
 

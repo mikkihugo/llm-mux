@@ -489,6 +489,12 @@ func buildGroundingMetadataMap(gm *ir.GroundingMetadata) map[string]any {
 
 type VertexEnvelopeProvider struct{}
 
+type coalescedMsg struct {
+	role         string
+	parts        []any
+	cacheControl *ir.CacheControl
+}
+
 func (p *VertexEnvelopeProvider) ConvertRequest(req *ir.UnifiedChatRequest) ([]byte, error) {
 	innerReq, err := p.buildInnerRequest(req)
 	if err != nil {
@@ -544,12 +550,6 @@ func (p *VertexEnvelopeProvider) buildClaudeContents(req *ir.UnifiedChatRequest)
 	}
 
 	toolIDToName, _ := ir.BuildToolMaps(req.Messages)
-
-	type coalescedMsg struct {
-		role         string
-		parts        []any
-		cacheControl *ir.CacheControl
-	}
 	var messages []coalescedMsg
 
 	for i := range req.Messages {
@@ -598,6 +598,8 @@ func (p *VertexEnvelopeProvider) buildClaudeContents(req *ir.UnifiedChatRequest)
 		return nil
 	}
 
+	messages = validateCoalescedToolPairs(messages)
+
 	contents := make([]any, len(messages))
 	for i, m := range messages {
 		content := map[string]any{"role": m.role, "parts": m.parts}
@@ -608,6 +610,90 @@ func (p *VertexEnvelopeProvider) buildClaudeContents(req *ir.UnifiedChatRequest)
 	}
 
 	return contents
+}
+
+// reorganizeToolPairs ensures each functionCall is immediately followed by its functionResponse.
+// This reorders messages to satisfy Claude API's requirement that tool_use must have
+// corresponding tool_result in the immediately following message.
+func validateCoalescedToolPairs(messages []coalescedMsg) []coalescedMsg {
+	toolResults := make(map[string]any)
+	for _, msg := range messages {
+		for _, part := range msg.parts {
+			if m, ok := part.(map[string]any); ok {
+				if fr, hasFR := m["functionResponse"].(map[string]any); hasFR {
+					if id, ok := fr["id"].(string); ok && id != "" {
+						toolResults[id] = part
+					}
+				}
+			}
+		}
+	}
+
+	if len(toolResults) == 0 {
+		return messages
+	}
+
+	type flatPart struct {
+		role         string
+		part         any
+		cacheControl *ir.CacheControl
+	}
+	var flattened []flatPart
+
+	for _, msg := range messages {
+		for _, part := range msg.parts {
+			flattened = append(flattened, flatPart{role: msg.role, part: part, cacheControl: msg.cacheControl})
+		}
+	}
+
+	var result []coalescedMsg
+	usedResponses := make(map[string]bool)
+
+	for _, fp := range flattened {
+		partMap, ok := fp.part.(map[string]any)
+		if !ok {
+			result = appendOrCoalesce(result, fp.role, fp.part, fp.cacheControl)
+			continue
+		}
+
+		if _, hasFR := partMap["functionResponse"]; hasFR {
+			continue
+		}
+
+		if fc, hasFC := partMap["functionCall"].(map[string]any); hasFC {
+			result = appendOrCoalesce(result, "model", fp.part, fp.cacheControl)
+
+			if id, ok := fc["id"].(string); ok && id != "" {
+				if toolResult, exists := toolResults[id]; exists && !usedResponses[id] {
+					result = appendOrCoalesce(result, "user", toolResult, nil)
+					usedResponses[id] = true
+				}
+			}
+			continue
+		}
+
+		result = appendOrCoalesce(result, fp.role, fp.part, fp.cacheControl)
+	}
+
+	filtered := make([]coalescedMsg, 0, len(result))
+	for _, m := range result {
+		if len(m.parts) > 0 {
+			filtered = append(filtered, m)
+		}
+	}
+	return filtered
+}
+
+func appendOrCoalesce(msgs []coalescedMsg, role string, part any, cc *ir.CacheControl) []coalescedMsg {
+	if len(msgs) > 0 && msgs[len(msgs)-1].role == role {
+		last := &msgs[len(msgs)-1]
+		last.parts = append(last.parts, part)
+		if cc != nil {
+			last.cacheControl = cc
+		}
+		return msgs
+	}
+	return append(msgs, coalescedMsg{role: role, parts: []any{part}, cacheControl: cc})
 }
 
 func buildCacheControlMap(cc *ir.CacheControl) map[string]any {
@@ -649,7 +735,7 @@ func (p *VertexEnvelopeProvider) buildClaudeAssistantParts(msg *ir.Message) []an
 			"functionCall": map[string]any{
 				"name": tc.Name,
 				"args": json.RawMessage(ir.ValidateAndNormalizeJSON(tc.Args)),
-				"id":   id,
+				"id":   ir.ToClaudeToolID(id),
 			},
 		}
 		if ir.IsValidThoughtSignature(tc.ThoughtSignature) {
@@ -678,7 +764,7 @@ func (p *VertexEnvelopeProvider) buildClaudeToolResultParts(msg *ir.Message, too
 			parts = append(parts, map[string]any{
 				"functionResponse": map[string]any{
 					"name":     name,
-					"id":       tr.ToolCallID,
+					"id":       ir.ToClaudeToolID(tr.ToolCallID),
 					"response": resp,
 				},
 			})
