@@ -325,7 +325,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 
 	// Stop usage persistence and flush pending writes
-	if err := usage.StopPersistence(); err != nil {
+	if err := usage.Stop(); err != nil {
 		log.Warnf("Failed to stop usage persistence: %v", err)
 	}
 
@@ -380,12 +380,14 @@ func (s *Server) UpdateClients(cfg *config.Config) {
 		}
 	}
 
-	if oldCfg == nil || oldCfg.UsageStatisticsEnabled != cfg.UsageStatisticsEnabled {
-		usage.SetStatisticsEnabled(cfg.UsageStatisticsEnabled)
+	oldUsageEnabled := oldCfg != nil && oldCfg.Usage.DSN != ""
+	newUsageEnabled := cfg.Usage.DSN != ""
+	if oldCfg == nil || oldUsageEnabled != newUsageEnabled {
+		usage.SetStatisticsEnabled(newUsageEnabled)
 		if oldCfg != nil {
-			log.Debugf("usage_statistics_enabled updated from %t to %t", oldCfg.UsageStatisticsEnabled, cfg.UsageStatisticsEnabled)
+			log.Debugf("usage_statistics_enabled updated from %t to %t", oldUsageEnabled, newUsageEnabled)
 		} else {
-			log.Debugf("usage_statistics_enabled toggled to %t", cfg.UsageStatisticsEnabled)
+			log.Debugf("usage_statistics_enabled toggled to %t", newUsageEnabled)
 		}
 	}
 

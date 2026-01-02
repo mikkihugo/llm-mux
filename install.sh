@@ -290,6 +290,109 @@ install_binary() {
 
 # --- Config --------------------------------------------------
 
+migrate_config() {
+    local config_path="${XDG_CONFIG_HOME:-$HOME/.config}/llm-mux/config.yaml"
+    
+    if [[ ! -f "$config_path" ]]; then
+        return 0
+    fi
+    
+    if ! grep -qE '^usage-statistics-enabled:|^usage-persistence:' "$config_path" 2>/dev/null; then
+        return 0
+    fi
+    
+    log "Migrating config to new format..."
+    
+    local backup_path="${config_path}.backup.$(date +%Y%m%d%H%M%S)"
+    cp "$config_path" "$backup_path"
+    info "Backup: $backup_path"
+    
+    local old_enabled="" old_persistence_enabled="" old_db_path=""
+    local old_batch_size="" old_flush_interval="" old_retention_days=""
+    
+    if grep -q '^usage-statistics-enabled:' "$config_path"; then
+        old_enabled=$(grep '^usage-statistics-enabled:' "$config_path" | sed 's/usage-statistics-enabled:[[:space:]]*//' | tr -d ' ')
+    fi
+    
+    if grep -q '^usage-persistence:' "$config_path"; then
+        local in_persistence=false
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^usage-persistence: ]]; then
+                in_persistence=true
+                continue
+            fi
+            if [[ "$in_persistence" == true ]]; then
+                if [[ "$line" =~ ^[a-z] && ! "$line" =~ ^[[:space:]] ]]; then
+                    break
+                fi
+                local key value
+                key=$(echo "$line" | sed 's/^[[:space:]]*//' | cut -d: -f1)
+                value=$(echo "$line" | sed 's/^[^:]*:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//' | tr -d ' ')
+                case "$key" in
+                    enabled)         old_persistence_enabled="$value" ;;
+                    db-path)         old_db_path="$value" ;;
+                    batch-size)      old_batch_size="$value" ;;
+                    flush-interval)  old_flush_interval="$value" ;;
+                    retention-days)  old_retention_days="$value" ;;
+                esac
+            fi
+        done < "$config_path"
+    fi
+    
+    local new_dsn=""
+    if [[ "$old_enabled" == "true" || "$old_persistence_enabled" == "true" ]]; then
+        if [[ -n "$old_db_path" ]]; then
+            local db_expanded="${old_db_path/#\~/$HOME}"
+            new_dsn="sqlite://$db_expanded"
+        else
+            new_dsn="sqlite://${XDG_CONFIG_HOME:-$HOME/.config}/llm-mux/usage.db"
+        fi
+    fi
+    
+    local new_batch="${old_batch_size:-100}"
+    local new_retention="${old_retention_days:-30}"
+    local new_flush="5s"
+    if [[ -n "$old_flush_interval" && "$old_flush_interval" =~ ^[0-9]+$ ]]; then
+        new_flush="${old_flush_interval}s"
+    fi
+    
+    local tmp_file
+    tmp_file=$(mktemp)
+    local skip_section=false
+    
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^usage-statistics-enabled: ]]; then
+            continue
+        fi
+        if [[ "$line" =~ ^usage-persistence: ]]; then
+            skip_section=true
+            continue
+        fi
+        if [[ "$skip_section" == true ]]; then
+            if [[ "$line" =~ ^[a-z] && ! "$line" =~ ^[[:space:]] ]]; then
+                skip_section=false
+            else
+                continue
+            fi
+        fi
+        echo "$line" >> "$tmp_file"
+    done < "$config_path"
+    
+    if [[ -n "$new_dsn" ]]; then
+        cat >> "$tmp_file" << EOF
+
+usage:
+  dsn: "$new_dsn"
+  batch-size: $new_batch
+  flush-interval: "$new_flush"
+  retention-days: $new_retention
+EOF
+    fi
+    
+    mv "$tmp_file" "$config_path"
+    info "Config migrated successfully"
+}
+
 init_config() {
     log "Initializing config and credentials..."
 
@@ -297,7 +400,7 @@ init_config() {
     # It outputs the actual paths used (platform-specific)
     # This avoids hardcoding paths that differ between Windows/Linux/macOS
     local init_output
-    if init_output=$("$INSTALL_DIR/$BINARY_NAME" --init 2>&1); then
+    if init_output=$("$INSTALL_DIR/$BINARY_NAME" init 2>&1); then
         # Display key info parsed from binary output
         local mgmt_key
 
@@ -342,6 +445,7 @@ service_macos_plist() {
     <key>ProgramArguments</key>
     <array>
         <string>${INSTALL_DIR}/${BINARY_NAME}</string>
+        <string>serve</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -425,7 +529,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${INSTALL_DIR}/${BINARY_NAME}
+ExecStart=${INSTALL_DIR}/${BINARY_NAME} serve
 WorkingDirectory=${HOME}
 Restart=on-failure
 RestartSec=5
@@ -555,15 +659,15 @@ print_success() {
     echo "Next steps:"
     echo ""
     echo "  1. Login to a provider:"
-    echo "     $BINARY_NAME --login              # Gemini"
-    echo "     $BINARY_NAME --claude-login       # Claude"
-    echo "     $BINARY_NAME --copilot-login      # GitHub Copilot"
-    echo "     $BINARY_NAME --codex-login        # OpenAI Codex"
+    echo "     $BINARY_NAME login gemini         # Gemini"
+    echo "     $BINARY_NAME login claude         # Claude"
+    echo "     $BINARY_NAME login copilot        # GitHub Copilot"
+    echo "     $BINARY_NAME login codex          # OpenAI Codex"
     echo ""
 
     if [[ "$SKIP_SERVICE" == "true" ]]; then
         echo "  2. Start the server:"
-        echo "     $BINARY_NAME"
+        echo "     $BINARY_NAME serve"
     else
         echo "  2. Service commands:"
         case "$OS" in
@@ -738,6 +842,7 @@ main() {
     fi
 
     install_binary
+    migrate_config
     init_config
 
     if [[ "$SKIP_SERVICE" != "true" ]]; then

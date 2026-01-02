@@ -15,14 +15,13 @@ import (
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/provider"
 	"github.com/tidwall/sjson"
-	"golang.org/x/sync/singleflight"
 )
 
 type GitHubCopilotExecutor struct {
-	cfg     *config.Config
-	mu      sync.RWMutex
-	cache   map[string]*cachedCopilotToken
-	sfGroup singleflight.Group
+	cfg          *config.Config
+	mu           sync.RWMutex
+	cache        map[string]*cachedCopilotToken
+	tokenRefresh *TokenRefreshGroup
 }
 
 type cachedCopilotToken struct {
@@ -31,7 +30,7 @@ type cachedCopilotToken struct {
 }
 
 func NewGitHubCopilotExecutor(cfg *config.Config) *GitHubCopilotExecutor {
-	return &GitHubCopilotExecutor{cfg: cfg, cache: make(map[string]*cachedCopilotToken)}
+	return &GitHubCopilotExecutor{cfg: cfg, cache: make(map[string]*cachedCopilotToken), tokenRefresh: NewTokenRefreshGroup()}
 }
 
 func (e *GitHubCopilotExecutor) Identifier() string { return GitHubCopilotAuthType }
@@ -191,7 +190,7 @@ func (e *GitHubCopilotExecutor) ensureAPIToken(ctx context.Context, auth *provid
 	}
 	e.mu.RUnlock()
 
-	result, err, _ := e.sfGroup.Do(accessToken, func() (interface{}, error) {
+	result, err := e.tokenRefresh.Do(accessToken, func(tokenCtx context.Context) (any, error) {
 		e.mu.RLock()
 		if cached, ok := e.cache[accessToken]; ok && cached.expiresAt.After(time.Now().Add(TokenExpiryBuffer)) {
 			e.mu.RUnlock()
@@ -200,7 +199,7 @@ func (e *GitHubCopilotExecutor) ensureAPIToken(ctx context.Context, auth *provid
 		e.mu.RUnlock()
 
 		copilotAuth := copilotauth.NewCopilotAuth(e.cfg)
-		apiToken, err := copilotAuth.GetCopilotAPIToken(ctx, accessToken)
+		apiToken, err := copilotAuth.GetCopilotAPIToken(tokenCtx, accessToken)
 		if err != nil {
 			return "", NewStatusError(http.StatusUnauthorized, fmt.Sprintf("failed to get copilot api token: %v", err), nil)
 		}

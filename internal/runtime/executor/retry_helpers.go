@@ -105,16 +105,30 @@ func (h *RetryHandler) HandleResponse(ctx context.Context, statusCode int, body 
 	isRetryable := h.isRetryableStatus(statusCode)
 	isFallbackCode := h.isFallbackCode(statusCode)
 
+	// Smart Retry for Fallback codes (429, 503):
+	// Instead of failing immediately, check if the requested wait time is short (transient error).
+	// If wait time is short (<= MaxDelay), treat as retryable to preserve sticky session.
+	// If wait time is long (Quota exceeded), fail immediately to trigger Provider Manager rotation.
+	if isFallbackCode {
+		delay := h.calculateDelay(body)
+		if delay <= h.config.MaxDelay {
+			log.Debugf("retry_handler: status %d (fallback code), but delay %v is within limit, converting to local retry", statusCode, delay)
+			isRetryable = true
+			isFallbackCode = false
+		}
+	}
+
 	// Fallback codes (429, 503) should immediately try next target if available.
 	// This allows Provider Manager to handle cross-auth/cross-provider fallback.
 	if isFallbackCode {
 		if hasNextTarget {
-			log.Debugf("retry_handler: status %d, falling back to next target", statusCode)
+			log.Debugf("retry_handler: status %d, trying next executor target", statusCode)
 			return RetryActionContinueNext, nil
 		}
-		// No next target - fail immediately so Provider Manager can try other auths.
-		// Do NOT retry with delay here; that blocks the request unnecessarily.
-		log.Debugf("retry_handler: status %d, no fallback target, failing to allow provider-level fallback", statusCode)
+		// No more executor-level targets (e.g., base URLs exhausted).
+		// Return error to Provider Manager for cross-account rotation.
+		// This is expected behavior for quota exhaustion (429).
+		log.Debugf("retry_handler: status %d, executor targets exhausted, returning to manager for account rotation", statusCode)
 		return RetryActionFail, nil
 	}
 

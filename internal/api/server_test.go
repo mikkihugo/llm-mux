@@ -29,11 +29,11 @@ func newTestServer(t *testing.T) *Server {
 		SDKConfig: proxyconfig.SDKConfig{
 			APIKeys: []string{"test-key"},
 		},
-		Port:                   0,
-		AuthDir:                authDir,
-		Debug:                  true,
-		LoggingToFile:          false,
-		UsageStatisticsEnabled: false,
+		Port:          0,
+		AuthDir:       authDir,
+		Debug:         true,
+		LoggingToFile: false,
+		Usage:         proxyconfig.UsageConfig{DSN: ""},
 	}
 
 	authManager := provider.NewManager(nil, nil, nil)

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nghyane/llm-mux/internal/translator/ir"
 	log "github.com/nghyane/llm-mux/internal/logging"
+	"github.com/nghyane/llm-mux/internal/translator/ir"
 )
 
 // Record contains the usage statistics captured for a single provider request.
@@ -19,7 +19,28 @@ type Record struct {
 	Source      string
 	RequestedAt time.Time
 	Failed      bool
-	Usage       *ir.Usage // Token usage from IR layer (comprehensive)
+	Usage       *ir.Usage
+}
+
+// UsageRecord represents a single usage record for persistence.
+type UsageRecord struct {
+	Provider                 string
+	Model                    string
+	APIKey                   string
+	AuthID                   string
+	AuthIndex                uint64
+	Source                   string
+	RequestedAt              time.Time
+	Failed                   bool
+	InputTokens              int64
+	OutputTokens             int64
+	ReasoningTokens          int64
+	CachedTokens             int64
+	TotalTokens              int64
+	AudioTokens              int64
+	CacheCreationInputTokens int64
+	CacheReadInputTokens     int64
+	ToolUsePromptTokens      int64
 }
 
 // Plugin consumes usage records emitted by the proxy runtime.
