@@ -2,7 +2,7 @@
 
 **AI Gateway** — Turns subscription LLMs (Claude Pro, Copilot, Gemini) into standard APIs.
 
-**Generated:** 2026-01-01 | **Commit:** 9dcc65f | **Branch:** main
+**Generated:** 2026-01-02 | **Commit:** 39041c8 | **Branch:** main | **Files:** 322 | **Lines:** 70k
 
 ## Providers
 

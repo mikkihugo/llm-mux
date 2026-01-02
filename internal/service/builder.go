@@ -5,6 +5,7 @@ package service
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/nghyane/llm-mux/internal/access"
 	"github.com/nghyane/llm-mux/internal/api"
@@ -176,7 +177,11 @@ func (b *Builder) Build() (*Service, error) {
 		if dirSetter, ok := tokenStore.(interface{ SetBaseDir(string) }); ok && b.cfg != nil {
 			dirSetter.SetBaseDir(b.cfg.AuthDir)
 		}
-		coreManager = provider.NewManager(tokenStore, nil, nil)
+		var selector provider.Selector
+		if b.cfg != nil && b.cfg.QuotaWindow > 0 {
+			selector = provider.NewQuotaAwareSelector(time.Duration(b.cfg.QuotaWindow) * time.Minute)
+		}
+		coreManager = provider.NewManager(tokenStore, selector, nil)
 	}
 	// Attach a default RoundTripper provider so providers can opt-in per-auth transports.
 	coreManager.SetRoundTripperProvider(newDefaultRoundTripperProvider())

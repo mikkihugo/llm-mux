@@ -5,71 +5,74 @@ package usage
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nghyane/llm-mux/internal/translator/ir"
-	log "github.com/nghyane/llm-mux/internal/logging"
 )
 
-var statisticsEnabled atomic.Bool
+var (
+	statisticsEnabled   atomic.Bool
+	defaultLoggerPlugin *LoggerPlugin
+	activeBackend       Backend
+)
 
 func init() {
 	statisticsEnabled.Store(true)
-	defaultLoggerPlugin = NewLoggerPlugin()
-	RegisterPlugin(defaultLoggerPlugin)
 }
 
-// LoggerPlugin collects in-memory request statistics for usage analysis.
-// It implements coreusage.Plugin to receive usage records emitted by the runtime.
+// LoggerPlugin collects usage statistics using lock-free counters
+// and delegates persistence to a Backend implementation.
 type LoggerPlugin struct {
-	stats     *RequestStatistics
-	persister *Persister
+	counters *Counters
+	backend  Backend
 }
 
-// NewLoggerPlugin constructs a new logger plugin instance.
-// Returns:
-//   - *LoggerPlugin: A new logger plugin instance wired to the shared statistics store.
-func NewLoggerPlugin() *LoggerPlugin { return &LoggerPlugin{stats: defaultRequestStatistics} }
+// NewLoggerPlugin constructs a new logger plugin with the given backend.
+func NewLoggerPlugin(backend Backend) *LoggerPlugin {
+	return &LoggerPlugin{
+		counters: NewCounters(),
+		backend:  backend,
+	}
+}
 
 // HandleUsage implements coreusage.Plugin.
-// It updates the in-memory statistics store whenever a usage record is received.
-// Parameters:
-//   - ctx: The context for the usage record
-//   - record: The usage record to aggregate
+// It updates lock-free counters and enqueues records to the backend.
 func (p *LoggerPlugin) HandleUsage(ctx context.Context, record Record) {
 	if !statisticsEnabled.Load() {
 		return
 	}
-	if p == nil || p.stats == nil {
+	if p == nil {
 		return
 	}
-	p.stats.Record(ctx, record)
 
-	// Enqueue to persister if enabled
-	if p.persister != nil {
-		timestamp := record.RequestedAt
-		if timestamp.IsZero() {
-			timestamp = time.Now()
-		}
-		tokens := normaliseUsage(record.Usage)
-		statsKey := record.APIKey
-		if statsKey == "" {
-			statsKey = resolveAPIIdentifier(ctx, record)
-		}
-		failed := record.Failed
-		if !failed {
-			failed = !resolveSuccess(ctx)
-		}
-		modelName := record.Model
-		if modelName == "" {
-			modelName = "unknown"
-		}
+	timestamp := record.RequestedAt
+	if timestamp.IsZero() {
+		timestamp = time.Now()
+	}
+	tokens := normaliseUsage(record.Usage)
+	statsKey := record.APIKey
+	if statsKey == "" {
+		statsKey = resolveAPIIdentifier(ctx, record)
+	}
+	failed := record.Failed
+	if !failed {
+		failed = !resolveSuccess(ctx)
+	}
+	modelName := record.Model
+	if modelName == "" {
+		modelName = "unknown"
+	}
 
-		p.persister.Enqueue(UsageRecord{
+	// Update fast counters (lock-free)
+	if p.counters != nil {
+		p.counters.Record(failed, tokens.TotalTokens)
+	}
+
+	// Enqueue to backend for persistence
+	if p.backend != nil {
+		p.backend.Enqueue(UsageRecord{
 			Provider:                 record.Provider,
 			Model:                    modelName,
 			APIKey:                   statsKey,
@@ -91,96 +94,53 @@ func (p *LoggerPlugin) HandleUsage(ctx context.Context, record Record) {
 	}
 }
 
-// SetStatisticsEnabled toggles whether in-memory statistics are recorded.
+// GetCounters returns the current counter snapshot.
+func (p *LoggerPlugin) GetCounters() CounterSnapshot {
+	if p == nil || p.counters == nil {
+		return CounterSnapshot{}
+	}
+	return p.counters.Snapshot()
+}
+
+// GetBackend returns the backend for query operations.
+func (p *LoggerPlugin) GetBackend() Backend {
+	if p == nil {
+		return nil
+	}
+	return p.backend
+}
+
+// SetStatisticsEnabled toggles whether statistics are recorded.
 func SetStatisticsEnabled(enabled bool) { statisticsEnabled.Store(enabled) }
 
 // StatisticsEnabled reports the current recording state.
 func StatisticsEnabled() bool { return statisticsEnabled.Load() }
 
-// InitializePersistence initializes SQLite persistence for usage records.
-// It loads historical records from the database to rebuild in-memory stats.
-// Returns an error if persistence fails to initialize, but this should not stop the server.
-func InitializePersistence(dbPath string, batchSize, flushIntervalSecs, retentionDays int) error {
-	if dbPath == "" {
-		return nil // Persistence disabled
-	}
-
-	persister, err := NewPersister(dbPath, batchSize, flushIntervalSecs, retentionDays)
+// Initialize creates and starts the backend and logger plugin.
+func Initialize(cfg BackendConfig) error {
+	backend, err := NewBackend(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to initialize persister: %w", err)
+		return err
 	}
-
-	// Load historical records from database
-	if persister.db != nil {
-		if err := LoadRecordsFromDB(persister.db, retentionDays, defaultRequestStatistics); err != nil {
-			// Log warning but don't fail - we can continue with empty stats
-			log.Warnf("Failed to load historical usage records: %v", err)
-		}
+	if err := backend.Start(); err != nil {
+		return err
 	}
-
-	// Attach persister to the default logger plugin
-	if defaultLoggerPlugin != nil {
-		defaultLoggerPlugin.persister = persister
-	}
-
+	activeBackend = backend
+	defaultLoggerPlugin = NewLoggerPlugin(backend)
+	RegisterPlugin(defaultLoggerPlugin)
 	return nil
 }
 
-// StopPersistence gracefully shuts down the persister, flushing pending writes.
-func StopPersistence() error {
-	if defaultLoggerPlugin != nil && defaultLoggerPlugin.persister != nil {
-		return defaultLoggerPlugin.persister.Stop()
+// Stop gracefully shuts down the usage system.
+func Stop() error {
+	if activeBackend != nil {
+		return activeBackend.Stop()
 	}
 	return nil
 }
 
-// RequestStatistics maintains aggregated request metrics in memory.
-type RequestStatistics struct {
-	mu sync.RWMutex
-
-	totalRequests atomic.Int64
-	successCount  atomic.Int64
-	failureCount  atomic.Int64
-	totalTokens   atomic.Int64
-
-	apis map[string]*apiStats
-
-	requestsByDay  map[string]int64
-	requestsByHour map[int]int64
-	tokensByDay    map[string]int64
-	tokensByHour   map[int]int64
-}
-
-// apiStats holds aggregated metrics for a single API key.
-type apiStats struct {
-	TotalRequests int64
-	TotalTokens   int64
-	Models        map[string]*modelStats
-}
-
-// Memory limits to prevent unbounded growth in statistics collection.
-const (
-	maxDetailsPerModel = 1000 // Max request details per model
-	maxTrackedAPIs     = 500  // Max unique API keys
-	maxModelsPerAPI    = 50   // Max models per API key
-	maxDaysRetention   = 30   // Keep last 30 days only
-)
-
-// modelStats holds aggregated metrics for a specific model within an API.
-type modelStats struct {
-	TotalRequests int64
-	TotalTokens   int64
-	Details       []RequestDetail
-}
-
-// RequestDetail stores the timestamp and token usage for a single request.
-type RequestDetail struct {
-	Timestamp time.Time  `json:"timestamp"`
-	Source    string     `json:"source"`
-	AuthIndex uint64     `json:"auth_index"`
-	Tokens    TokenStats `json:"tokens"`
-	Failed    bool       `json:"failed"`
-}
+// GetLoggerPlugin returns the shared logger plugin instance.
+func GetLoggerPlugin() *LoggerPlugin { return defaultLoggerPlugin }
 
 // TokenStats captures the token usage breakdown for a request.
 type TokenStats struct {
@@ -195,222 +155,7 @@ type TokenStats struct {
 	ToolUsePromptTokens      int64 `json:"tool_use_prompt_tokens,omitempty"`
 }
 
-// StatisticsSnapshot represents an immutable view of the aggregated metrics.
-type StatisticsSnapshot struct {
-	TotalRequests int64 `json:"total_requests"`
-	SuccessCount  int64 `json:"success_count"`
-	FailureCount  int64 `json:"failure_count"`
-	TotalTokens   int64 `json:"total_tokens"`
-
-	APIs map[string]APISnapshot `json:"apis"`
-
-	RequestsByDay  map[string]int64 `json:"requests_by_day"`
-	RequestsByHour map[string]int64 `json:"requests_by_hour"`
-	TokensByDay    map[string]int64 `json:"tokens_by_day"`
-	TokensByHour   map[string]int64 `json:"tokens_by_hour"`
-}
-
-// APISnapshot summarises metrics for a single API key.
-type APISnapshot struct {
-	TotalRequests int64                    `json:"total_requests"`
-	TotalTokens   int64                    `json:"total_tokens"`
-	Models        map[string]ModelSnapshot `json:"models"`
-}
-
-// ModelSnapshot summarises metrics for a specific model.
-type ModelSnapshot struct {
-	TotalRequests int64           `json:"total_requests"`
-	TotalTokens   int64           `json:"total_tokens"`
-	Details       []RequestDetail `json:"details"`
-}
-
-var defaultRequestStatistics = NewRequestStatistics()
-var defaultLoggerPlugin *LoggerPlugin
-
-// GetRequestStatistics returns the shared statistics store.
-func GetRequestStatistics() *RequestStatistics { return defaultRequestStatistics }
-
-// GetLoggerPlugin returns the shared logger plugin instance.
-func GetLoggerPlugin() *LoggerPlugin { return defaultLoggerPlugin }
-
-// NewRequestStatistics constructs an empty statistics store.
-func NewRequestStatistics() *RequestStatistics {
-	return &RequestStatistics{
-		apis:           make(map[string]*apiStats),
-		requestsByDay:  make(map[string]int64),
-		requestsByHour: make(map[int]int64),
-		tokensByDay:    make(map[string]int64),
-		tokensByHour:   make(map[int]int64),
-	}
-}
-
-// Record ingests a new usage record and updates the aggregates.
-func (s *RequestStatistics) Record(ctx context.Context, record Record) {
-	if s == nil {
-		return
-	}
-	if !statisticsEnabled.Load() {
-		return
-	}
-	timestamp := record.RequestedAt
-	if timestamp.IsZero() {
-		timestamp = time.Now()
-	}
-	tokens := normaliseUsage(record.Usage)
-	totalTokens := tokens.TotalTokens
-	statsKey := record.APIKey
-	if statsKey == "" {
-		statsKey = resolveAPIIdentifier(ctx, record)
-	}
-	failed := record.Failed
-	if !failed {
-		failed = !resolveSuccess(ctx)
-	}
-	success := !failed
-	modelName := record.Model
-	if modelName == "" {
-		modelName = "unknown"
-	}
-	dayKey := timestamp.Format("2006-01-02")
-	hourKey := timestamp.Hour()
-
-	// Update atomic counters without lock
-	s.totalRequests.Add(1)
-	if success {
-		s.successCount.Add(1)
-	} else {
-		s.failureCount.Add(1)
-	}
-	s.totalTokens.Add(totalTokens)
-
-	// Lock only for map operations
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	stats, ok := s.apis[statsKey]
-	if !ok {
-		// Only track new API if under limit; skip if over capacity
-		if len(s.apis) >= maxTrackedAPIs {
-			return
-		}
-		stats = &apiStats{Models: make(map[string]*modelStats)}
-		s.apis[statsKey] = stats
-	}
-	s.updateAPIStats(stats, modelName, RequestDetail{
-		Timestamp: timestamp,
-		Source:    record.Source,
-		AuthIndex: record.AuthIndex,
-		Tokens:    tokens,
-		Failed:    failed,
-	})
-
-	s.requestsByDay[dayKey]++
-	s.requestsByHour[hourKey]++
-	s.tokensByDay[dayKey] += totalTokens
-	s.tokensByHour[hourKey] += totalTokens
-
-	// Enforce retention policy: remove entries older than maxDaysRetention
-	s.enforceRetentionPolicy(timestamp)
-}
-
-// enforceRetentionPolicy removes day entries older than maxDaysRetention.
-// Called during Record() with the current request timestamp. Lock must be held.
-func (s *RequestStatistics) enforceRetentionPolicy(currentTime time.Time) {
-	cutoffTime := currentTime.AddDate(0, 0, -maxDaysRetention)
-	cutoffKey := cutoffTime.Format("2006-01-02")
-
-	for dayKey := range s.requestsByDay {
-		if dayKey < cutoffKey {
-			delete(s.requestsByDay, dayKey)
-			delete(s.tokensByDay, dayKey)
-		}
-	}
-}
-
-func (s *RequestStatistics) updateAPIStats(stats *apiStats, model string, detail RequestDetail) {
-	stats.TotalRequests++
-	stats.TotalTokens += detail.Tokens.TotalTokens
-	modelStatsValue, ok := stats.Models[model]
-	if !ok {
-		// Only track new model if under limit; skip model details if over capacity
-		if len(stats.Models) >= maxModelsPerAPI {
-			return
-		}
-		modelStatsValue = &modelStats{}
-		stats.Models[model] = modelStatsValue
-	}
-	modelStatsValue.TotalRequests++
-	modelStatsValue.TotalTokens += detail.Tokens.TotalTokens
-
-	// Enforce max capacity with FIFO eviction to prevent unbounded memory growth
-	if len(modelStatsValue.Details) >= maxDetailsPerModel {
-		// Shift slice to remove oldest entry (FIFO)
-		copy(modelStatsValue.Details, modelStatsValue.Details[1:])
-		modelStatsValue.Details = modelStatsValue.Details[:len(modelStatsValue.Details)-1]
-	}
-	modelStatsValue.Details = append(modelStatsValue.Details, detail)
-}
-
-// Snapshot returns a copy of the aggregated metrics for external consumption.
-func (s *RequestStatistics) Snapshot() StatisticsSnapshot {
-	result := StatisticsSnapshot{}
-	if s == nil {
-		return result
-	}
-
-	// Read atomic counters without lock
-	result.TotalRequests = s.totalRequests.Load()
-	result.SuccessCount = s.successCount.Load()
-	result.FailureCount = s.failureCount.Load()
-	result.TotalTokens = s.totalTokens.Load()
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	result.APIs = make(map[string]APISnapshot, len(s.apis))
-	for apiName, stats := range s.apis {
-		apiSnapshot := APISnapshot{
-			TotalRequests: stats.TotalRequests,
-			TotalTokens:   stats.TotalTokens,
-			Models:        make(map[string]ModelSnapshot, len(stats.Models)),
-		}
-		for modelName, modelStatsValue := range stats.Models {
-			requestDetails := make([]RequestDetail, len(modelStatsValue.Details))
-			copy(requestDetails, modelStatsValue.Details)
-			apiSnapshot.Models[modelName] = ModelSnapshot{
-				TotalRequests: modelStatsValue.TotalRequests,
-				TotalTokens:   modelStatsValue.TotalTokens,
-				Details:       requestDetails,
-			}
-		}
-		result.APIs[apiName] = apiSnapshot
-	}
-
-	result.RequestsByDay = make(map[string]int64, len(s.requestsByDay))
-	for k, v := range s.requestsByDay {
-		result.RequestsByDay[k] = v
-	}
-
-	result.RequestsByHour = make(map[string]int64, len(s.requestsByHour))
-	for hour, v := range s.requestsByHour {
-		key := formatHour(hour)
-		result.RequestsByHour[key] = v
-	}
-
-	result.TokensByDay = make(map[string]int64, len(s.tokensByDay))
-	for k, v := range s.tokensByDay {
-		result.TokensByDay[k] = v
-	}
-
-	result.TokensByHour = make(map[string]int64, len(s.tokensByHour))
-	for hour, v := range s.tokensByHour {
-		key := formatHour(hour)
-		result.TokensByHour[key] = v
-	}
-
-	return result
-}
-
+// resolveAPIIdentifier extracts an API identifier from context or record.
 func resolveAPIIdentifier(ctx context.Context, record Record) string {
 	if ctx != nil {
 		if ginCtx, ok := ctx.Value("gin").(*gin.Context); ok && ginCtx != nil {
@@ -438,6 +183,7 @@ func resolveAPIIdentifier(ctx context.Context, record Record) string {
 
 const httpStatusBadRequest = 400
 
+// resolveSuccess determines if a request was successful based on context.
 func resolveSuccess(ctx context.Context) bool {
 	if ctx == nil {
 		return true
@@ -453,11 +199,13 @@ func resolveSuccess(ctx context.Context) bool {
 	// 400 Bad Request is a user error, not a provider failure
 	// Only count 401, 429, 5xx etc. as failures
 	if status == httpStatusBadRequest {
-		return true
+		return true // user error, not provider failure
 	}
-	return status < httpStatusBadRequest || status >= 500
+	// Success: 2xx-3xx only
+	return status < httpStatusBadRequest
 }
 
+// normaliseUsage converts IR usage to TokenStats.
 func normaliseUsage(u *ir.Usage) TokenStats {
 	if u == nil {
 		return TokenStats{}
@@ -482,12 +230,4 @@ func normaliseUsage(u *ir.Usage) TokenStats {
 		tokens.TotalTokens = tokens.PromptTokens + tokens.CompletionTokens
 	}
 	return tokens
-}
-
-func formatHour(hour int) string {
-	if hour < 0 {
-		hour = 0
-	}
-	hour = hour % 24
-	return fmt.Sprintf("%02d", hour)
 }

@@ -46,4 +46,4 @@ USER llm-mux
 ENV TZ=UTC
 EXPOSE 8317
 
-CMD ["./llm-mux"]
+CMD ["./llm-mux", "serve"]

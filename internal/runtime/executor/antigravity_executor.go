@@ -23,7 +23,6 @@ import (
 
 	log "github.com/nghyane/llm-mux/internal/logging"
 	"github.com/tidwall/sjson"
-	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -43,12 +42,12 @@ func alias2ModelName(modelID string) string {
 }
 
 type AntigravityExecutor struct {
-	cfg     *config.Config
-	sfGroup singleflight.Group
+	cfg          *config.Config
+	tokenRefresh *TokenRefreshGroup
 }
 
 func NewAntigravityExecutor(cfg *config.Config) *AntigravityExecutor {
-	return &AntigravityExecutor{cfg: cfg}
+	return &AntigravityExecutor{cfg: cfg, tokenRefresh: NewTokenRefreshGroup()}
 }
 
 func (e *AntigravityExecutor) Identifier() string { return antigravityAuthType }
@@ -435,14 +434,14 @@ func (e *AntigravityExecutor) ensureAccessToken(ctx context.Context, auth *provi
 		return accessToken, nil, nil
 	}
 
-	result, err, _ := e.sfGroup.Do(auth.ID, func() (interface{}, error) {
+	result, err := e.tokenRefresh.Do(auth.ID, func(refreshCtx context.Context) (any, error) {
 		accessToken := MetaStringValue(auth.Metadata, "access_token")
 		expiry := TokenExpiry(auth.Metadata)
 		if accessToken != "" && expiry.After(time.Now().Add(DefaultRefreshSkew)) {
 			return tokenRefreshResult{token: accessToken, auth: nil}, nil
 		}
 
-		updated, errRefresh := e.refreshToken(ctx, auth.Clone())
+		updated, errRefresh := e.refreshToken(refreshCtx, auth.Clone())
 		if errRefresh != nil {
 			return nil, errRefresh
 		}

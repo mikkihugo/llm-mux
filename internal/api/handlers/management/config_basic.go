@@ -223,61 +223,152 @@ func (h *Handler) GetConfigYAML(c *gin.Context) {
 }
 
 // Debug
-func (h *Handler) GetDebug(c *gin.Context) { c.JSON(200, gin.H{"debug": h.cfg.Debug}) }
-func (h *Handler) PutDebug(c *gin.Context) { h.updateBoolField(c, func(v bool) { h.cfg.Debug = v }) }
+func (h *Handler) GetDebug(c *gin.Context) {
+	respondOK(c, gin.H{"debug": h.cfg.Debug})
+}
+func (h *Handler) PutDebug(c *gin.Context) {
+	value, ok := h.bindBoolValue(c)
+	if !ok {
+		return
+	}
+	h.cfg.Debug = value
+	if !h.persistSilent() {
+		respondInternalError(c, "failed to save config")
+		return
+	}
+	respondOK(c, gin.H{"debug": h.cfg.Debug})
+}
 
-// UsageStatisticsEnabled
+// UsageStatisticsEnabled (mapped to Usage.DSN != "")
 func (h *Handler) GetUsageStatisticsEnabled(c *gin.Context) {
-	c.JSON(200, gin.H{"usage-statistics-enabled": h.cfg.UsageStatisticsEnabled})
+	enabled := h.cfg.Usage.DSN != ""
+	respondOK(c, gin.H{"usage-statistics-enabled": enabled})
 }
 func (h *Handler) PutUsageStatisticsEnabled(c *gin.Context) {
-	h.updateBoolField(c, func(v bool) { h.cfg.UsageStatisticsEnabled = v })
+	value, ok := h.bindBoolValue(c)
+	if !ok {
+		return
+	}
+	if value {
+		if h.cfg.Usage.DSN == "" {
+			h.cfg.Usage.DSN = "sqlite://~/.config/llm-mux/usage.db"
+		}
+	} else {
+		h.cfg.Usage.DSN = ""
+	}
+	if !h.persistSilent() {
+		respondInternalError(c, "failed to save config")
+		return
+	}
+	respondOK(c, gin.H{"usage-statistics-enabled": h.cfg.Usage.DSN != ""})
 }
 
-// UsageStatisticsEnabled
+// LoggingToFile
 func (h *Handler) GetLoggingToFile(c *gin.Context) {
-	c.JSON(200, gin.H{"logging-to-file": h.cfg.LoggingToFile})
+	respondOK(c, gin.H{"logging-to-file": h.cfg.LoggingToFile})
 }
 func (h *Handler) PutLoggingToFile(c *gin.Context) {
-	h.updateBoolField(c, func(v bool) { h.cfg.LoggingToFile = v })
+	value, ok := h.bindBoolValue(c)
+	if !ok {
+		return
+	}
+	h.cfg.LoggingToFile = value
+	if !h.persistSilent() {
+		respondInternalError(c, "failed to save config")
+		return
+	}
+	respondOK(c, gin.H{"logging-to-file": h.cfg.LoggingToFile})
 }
 
 // Request log
-func (h *Handler) GetRequestLog(c *gin.Context) { c.JSON(200, gin.H{"request-log": h.cfg.RequestLog}) }
+func (h *Handler) GetRequestLog(c *gin.Context) {
+	respondOK(c, gin.H{"request-log": h.cfg.RequestLog})
+}
 func (h *Handler) PutRequestLog(c *gin.Context) {
-	h.updateBoolField(c, func(v bool) { h.cfg.RequestLog = v })
+	value, ok := h.bindBoolValue(c)
+	if !ok {
+		return
+	}
+	h.cfg.RequestLog = value
+	if !h.persistSilent() {
+		respondInternalError(c, "failed to save config")
+		return
+	}
+	respondOK(c, gin.H{"request-log": h.cfg.RequestLog})
 }
 
 // Websocket auth
 func (h *Handler) GetWebsocketAuth(c *gin.Context) {
-	c.JSON(200, gin.H{"ws-auth": h.cfg.WebsocketAuth})
+	respondOK(c, gin.H{"ws-auth": h.cfg.WebsocketAuth})
 }
 func (h *Handler) PutWebsocketAuth(c *gin.Context) {
-	h.updateBoolField(c, func(v bool) { h.cfg.WebsocketAuth = v })
+	value, ok := h.bindBoolValue(c)
+	if !ok {
+		return
+	}
+	h.cfg.WebsocketAuth = value
+	if !h.persistSilent() {
+		respondInternalError(c, "failed to save config")
+		return
+	}
+	respondOK(c, gin.H{"ws-auth": h.cfg.WebsocketAuth})
 }
 
 // Request retry
 func (h *Handler) GetRequestRetry(c *gin.Context) {
-	c.JSON(200, gin.H{"request-retry": h.cfg.RequestRetry})
+	respondOK(c, gin.H{"request-retry": h.cfg.RequestRetry})
 }
 func (h *Handler) PutRequestRetry(c *gin.Context) {
-	h.updateIntField(c, func(v int) { h.cfg.RequestRetry = v })
+	value, ok := h.bindIntValue(c)
+	if !ok {
+		return
+	}
+	h.cfg.RequestRetry = value
+	if !h.persistSilent() {
+		respondInternalError(c, "failed to save config")
+		return
+	}
+	respondOK(c, gin.H{"request-retry": h.cfg.RequestRetry})
 }
 
 // Max retry interval
 func (h *Handler) GetMaxRetryInterval(c *gin.Context) {
-	c.JSON(200, gin.H{"max-retry-interval": h.cfg.MaxRetryInterval})
+	respondOK(c, gin.H{"max-retry-interval": h.cfg.MaxRetryInterval})
 }
 func (h *Handler) PutMaxRetryInterval(c *gin.Context) {
-	h.updateIntField(c, func(v int) { h.cfg.MaxRetryInterval = v })
+	value, ok := h.bindIntValue(c)
+	if !ok {
+		return
+	}
+	h.cfg.MaxRetryInterval = value
+	if !h.persistSilent() {
+		respondInternalError(c, "failed to save config")
+		return
+	}
+	respondOK(c, gin.H{"max-retry-interval": h.cfg.MaxRetryInterval})
 }
 
 // Proxy URL
-func (h *Handler) GetProxyURL(c *gin.Context) { c.JSON(200, gin.H{"proxy-url": h.cfg.ProxyURL}) }
+func (h *Handler) GetProxyURL(c *gin.Context) {
+	respondOK(c, gin.H{"proxy-url": h.cfg.ProxyURL})
+}
 func (h *Handler) PutProxyURL(c *gin.Context) {
-	h.updateStringField(c, func(v string) { h.cfg.ProxyURL = v })
+	value, ok := h.bindStringValue(c)
+	if !ok {
+		return
+	}
+	h.cfg.ProxyURL = value
+	if !h.persistSilent() {
+		respondInternalError(c, "failed to save config")
+		return
+	}
+	respondOK(c, gin.H{"proxy-url": h.cfg.ProxyURL})
 }
 func (h *Handler) DeleteProxyURL(c *gin.Context) {
 	h.cfg.ProxyURL = ""
-	h.persist(c)
+	if !h.persistSilent() {
+		respondInternalError(c, "failed to save config")
+		return
+	}
+	respondOK(c, gin.H{"proxy-url": h.cfg.ProxyURL})
 }
