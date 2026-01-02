@@ -55,7 +55,7 @@ func (h *Handler) GetLatestVersion(c *gin.Context) {
 	if latestVersionCache != "" && time.Since(latestVersionCacheAt) < latestVersionCacheTTL {
 		cached := latestVersionCache
 		latestVersionMu.RUnlock()
-		respondOK(c, gin.H{"latest_version": cached, "cached": true})
+		respondOK(c, gin.H{"latest-version": cached, "cached": true})
 		return
 	}
 	latestVersionMu.RUnlock()
@@ -68,7 +68,7 @@ func (h *Handler) GetLatestVersion(c *gin.Context) {
 		if latestVersionCache != "" {
 			cached := latestVersionCache
 			latestVersionMu.RUnlock()
-			respondOK(c, gin.H{"latest_version": cached, "cached": true, "stale": true})
+			respondOK(c, gin.H{"latest-version": cached, "cached": true, "stale": true})
 			return
 		}
 		latestVersionMu.RUnlock()
@@ -82,7 +82,7 @@ func (h *Handler) GetLatestVersion(c *gin.Context) {
 	latestVersionCacheAt = time.Now()
 	latestVersionMu.Unlock()
 
-	respondOK(c, gin.H{"latest_version": version})
+	respondOK(c, gin.H{"latest-version": version})
 }
 
 func (h *Handler) fetchLatestVersion(c *gin.Context) (string, error) {

@@ -107,7 +107,7 @@ func (h *Handler) deleteFromStringList(c *gin.Context, target *[]string, after f
 // api-keys
 func (h *Handler) GetAPIKeys(c *gin.Context) {
 	cfg := h.getConfig()
-	respondOK(c, gin.H{"api_keys": cfg.APIKeys})
+	respondOK(c, gin.H{"api-keys": cfg.APIKeys})
 }
 func (h *Handler) PutAPIKeys(c *gin.Context) {
 	h.putStringList(c, func(v []string) {
@@ -125,7 +125,7 @@ func (h *Handler) DeleteAPIKeys(c *gin.Context) {
 // oauth-excluded-models: map[string][]string
 func (h *Handler) GetOAuthExcludedModels(c *gin.Context) {
 	cfg := h.getConfig()
-	respondOK(c, gin.H{"oauth_excluded_models": config.NormalizeOAuthExcludedModels(cfg.OAuthExcludedModels)})
+	respondOK(c, gin.H{"oauth-excluded-models": config.NormalizeOAuthExcludedModels(cfg.OAuthExcludedModels)})
 }
 
 func (h *Handler) PutOAuthExcludedModels(c *gin.Context) {
