@@ -1,6 +1,9 @@
 package store
 
-import "strings"
+import (
+	"net/url"
+	"strings"
+)
 
 // StoreType identifies the backend storage mechanism.
 type StoreType string
@@ -30,6 +33,11 @@ type StoreConfig struct {
 	Postgres PostgresStoreConfig
 	Git      GitStoreConfig
 	Object   ObjectStoreConfig
+
+	// Target paths for transparent sync layer.
+	// When set, stores sync to these paths instead of creating their own workspace.
+	TargetConfigPath string // e.g., ~/.config/llm-mux/config.yaml
+	TargetAuthDir    string // e.g., ~/.config/llm-mux/auth
 }
 
 // LookupEnvFunc is a function that looks up environment variables.
@@ -38,14 +46,12 @@ type LookupEnvFunc func(keys ...string) (string, bool)
 
 // ParseFromEnv builds a StoreConfig from environment variables.
 // The lookupEnv function is injected to avoid circular dependencies with the env package.
-// writableBase provides the default local path when no explicit path is configured.
-func ParseFromEnv(lookupEnv LookupEnvFunc, writableBase string) StoreConfig {
+func ParseFromEnv(lookupEnv LookupEnvFunc) StoreConfig {
 	cfg := StoreConfig{}
 
 	storeType, _ := lookupEnv("LLM_MUX_STORE_TYPE")
 	storeType = strings.ToLower(strings.TrimSpace(storeType))
 
-	// Parse Postgres store configuration
 	if storeType == "postgres" || storeType == "pg" {
 		cfg.Type = TypePostgres
 	}
@@ -57,16 +63,9 @@ func ParseFromEnv(lookupEnv LookupEnvFunc, writableBase string) StoreConfig {
 		if value, ok := lookupEnv("LLM_MUX_PGSTORE_SCHEMA", "PGSTORE_SCHEMA"); ok {
 			cfg.Postgres.Schema = value
 		}
-		if value, ok := lookupEnv("LLM_MUX_PGSTORE_LOCAL_PATH", "PGSTORE_LOCAL_PATH"); ok {
-			cfg.Postgres.SpoolDir = value
-		}
-		if cfg.Postgres.SpoolDir == "" && writableBase != "" {
-			cfg.Postgres.SpoolDir = writableBase
-		}
 		return cfg
 	}
 
-	// Parse Git store configuration
 	if storeType == "git" {
 		cfg.Type = TypeGit
 	}
@@ -81,16 +80,9 @@ func ParseFromEnv(lookupEnv LookupEnvFunc, writableBase string) StoreConfig {
 		if value, ok := lookupEnv("LLM_MUX_GITSTORE_TOKEN", "GITSTORE_GIT_TOKEN"); ok {
 			cfg.Git.Password = value
 		}
-		if value, ok := lookupEnv("LLM_MUX_GITSTORE_LOCAL_PATH", "GITSTORE_LOCAL_PATH"); ok {
-			cfg.Git.LocalPath = value
-		}
-		if cfg.Git.LocalPath == "" && writableBase != "" {
-			cfg.Git.LocalPath = writableBase
-		}
 		return cfg
 	}
 
-	// Parse Object store configuration
 	if storeType == "s3" || storeType == "object" || storeType == "minio" {
 		cfg.Type = TypeObject
 	}
@@ -108,12 +100,24 @@ func ParseFromEnv(lookupEnv LookupEnvFunc, writableBase string) StoreConfig {
 		if value, ok := lookupEnv("LLM_MUX_OBJECTSTORE_BUCKET", "OBJECTSTORE_BUCKET"); ok {
 			cfg.Object.Bucket = value
 		}
-		if value, ok := lookupEnv("LLM_MUX_OBJECTSTORE_LOCAL_PATH", "OBJECTSTORE_LOCAL_PATH"); ok {
-			cfg.Object.LocalRoot = value
+		cfg.Object.PathStyle = true
+		cfg.Object.UseSSL = true
+		endpoint := strings.TrimSpace(cfg.Object.Endpoint)
+		if strings.Contains(endpoint, "://") {
+			if parsed, err := url.Parse(endpoint); err == nil {
+				switch strings.ToLower(parsed.Scheme) {
+				case "http":
+					cfg.Object.UseSSL = false
+				case "https":
+					cfg.Object.UseSSL = true
+				}
+				cfg.Object.Endpoint = parsed.Host
+				if parsed.Path != "" && parsed.Path != "/" {
+					cfg.Object.Endpoint = strings.TrimSuffix(parsed.Host+parsed.Path, "/")
+				}
+			}
 		}
-		if cfg.Object.LocalRoot == "" && writableBase != "" {
-			cfg.Object.LocalRoot = writableBase
-		}
+		cfg.Object.Endpoint = strings.TrimRight(cfg.Object.Endpoint, "/")
 		return cfg
 	}
 

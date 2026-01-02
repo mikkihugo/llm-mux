@@ -48,15 +48,20 @@ func Bootstrap(configPath string) (*BootstrapResult, error) {
 		}
 	}
 
-	writableBase := util.WritablePath()
-	storeCfg := store.ParseFromEnv(env.LookupEnv, writableBase)
+	storeCfg := store.ParseFromEnv(env.LookupEnv)
+
+	xdgConfigDir, _ := util.ResolveAuthDir("$XDG_CONFIG_HOME/llm-mux")
+	defaultConfigPath := filepath.Join(xdgConfigDir, "config.yaml")
+	defaultAuthDir := filepath.Join(xdgConfigDir, "auth")
 
 	var cfg *config.Config
 	var configFilePath string
 	var storeResult *store.StoreResult
 
-	// Initialize store if configured
 	if storeCfg.IsConfigured() {
+		storeCfg.TargetConfigPath = defaultConfigPath
+		storeCfg.TargetAuthDir = defaultAuthDir
+
 		ctx := context.Background()
 		storeResult, err = store.NewStore(ctx, storeCfg)
 		if err != nil {
@@ -69,7 +74,6 @@ func Bootstrap(configPath string) (*BootstrapResult, error) {
 			cfg.AuthDir = storeResult.AuthDir
 		}
 
-		// Log store initialization
 		switch storeCfg.Type {
 		case store.TypePostgres:
 			log.Infof("postgres-backed token store enabled")
@@ -79,15 +83,12 @@ func Bootstrap(configPath string) (*BootstrapResult, error) {
 			log.Infof("git-backed token store enabled")
 		}
 	} else if configPath != "" {
-		// Expand environment variables and ~ to absolute path
 		if resolved, errResolve := util.ResolveAuthDir(configPath); errResolve == nil {
 			configPath = resolved
 		}
 		configFilePath = configPath
 
-		// Auto-init on first run
-		defaultExpanded, _ := util.ResolveAuthDir("$XDG_CONFIG_HOME/llm-mux/config.yaml")
-		if configPath == defaultExpanded {
+		if configPath == defaultConfigPath {
 			if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
 				autoInitConfig(configPath)
 			}

@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/nghyane/llm-mux/internal/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,10 +13,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nghyane/llm-mux/internal/json"
+
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/nghyane/llm-mux/internal/config"
-	"github.com/nghyane/llm-mux/internal/provider"
 	log "github.com/nghyane/llm-mux/internal/logging"
+	"github.com/nghyane/llm-mux/internal/provider"
 )
 
 const (
@@ -32,7 +33,6 @@ type PostgresStoreConfig struct {
 	Schema      string
 	ConfigTable string
 	AuthTable   string
-	SpoolDir    string
 }
 
 // PostgresStore persists configuration and authentication metadata using PostgreSQL as backend
@@ -40,14 +40,13 @@ type PostgresStoreConfig struct {
 type PostgresStore struct {
 	db         *sql.DB
 	cfg        PostgresStoreConfig
-	spoolRoot  string
 	configPath string
 	authDir    string
 	mu         sync.Mutex
 }
 
 // NewPostgresStore establishes a connection to PostgreSQL and prepares the local workspace.
-func NewPostgresStore(ctx context.Context, cfg PostgresStoreConfig) (*PostgresStore, error) {
+func NewPostgresStore(ctx context.Context, cfg PostgresStoreConfig, configPath, authDir string) (*PostgresStore, error) {
 	trimmedDSN := strings.TrimSpace(cfg.DSN)
 	if trimmedDSN == "" {
 		return nil, fmt.Errorf("postgres store: DSN is required")
@@ -60,24 +59,28 @@ func NewPostgresStore(ctx context.Context, cfg PostgresStoreConfig) (*PostgresSt
 		cfg.AuthTable = defaultAuthTable
 	}
 
-	spoolRoot := strings.TrimSpace(cfg.SpoolDir)
-	if spoolRoot == "" {
-		if cwd, err := os.Getwd(); err == nil {
-			spoolRoot = filepath.Join(cwd, "pgstore")
-		} else {
-			spoolRoot = filepath.Join(os.TempDir(), "pgstore")
-		}
+	configPath = strings.TrimSpace(configPath)
+	authDir = strings.TrimSpace(authDir)
+	if configPath == "" {
+		return nil, fmt.Errorf("postgres store: configPath is required")
 	}
-	absSpool, err := filepath.Abs(spoolRoot)
+	if authDir == "" {
+		return nil, fmt.Errorf("postgres store: authDir is required")
+	}
+
+	absConfigPath, err := filepath.Abs(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("postgres store: resolve spool directory: %w", err)
+		return nil, fmt.Errorf("postgres store: resolve config path: %w", err)
 	}
-	configDir := filepath.Join(absSpool, "config")
-	authDir := filepath.Join(absSpool, "auths")
-	if err = os.MkdirAll(configDir, 0o700); err != nil {
+	absAuthDir, err := filepath.Abs(authDir)
+	if err != nil {
+		return nil, fmt.Errorf("postgres store: resolve auth directory: %w", err)
+	}
+
+	if err = os.MkdirAll(filepath.Dir(absConfigPath), 0o700); err != nil {
 		return nil, fmt.Errorf("postgres store: create config directory: %w", err)
 	}
-	if err = os.MkdirAll(authDir, 0o700); err != nil {
+	if err = os.MkdirAll(absAuthDir, 0o700); err != nil {
 		return nil, fmt.Errorf("postgres store: create auth directory: %w", err)
 	}
 
@@ -93,9 +96,8 @@ func NewPostgresStore(ctx context.Context, cfg PostgresStoreConfig) (*PostgresSt
 	store := &PostgresStore{
 		db:         db,
 		cfg:        cfg,
-		spoolRoot:  absSpool,
-		configPath: filepath.Join(configDir, "config.yaml"),
-		authDir:    authDir,
+		configPath: absConfigPath,
+		authDir:    absAuthDir,
 	}
 	return store, nil
 }
@@ -172,14 +174,6 @@ func (s *PostgresStore) AuthDir() string {
 		return ""
 	}
 	return s.authDir
-}
-
-// WorkDir exposes the root spool directory used for mirroring.
-func (s *PostgresStore) WorkDir() string {
-	if s == nil {
-		return ""
-	}
-	return s.spoolRoot
 }
 
 // SetBaseDir implements the optional interface used by authenticators; it is a no-op because

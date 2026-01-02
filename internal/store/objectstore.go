@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nghyane/llm-mux/internal/json"
 	"io"
 	"io/fs"
 	"net/http"
@@ -15,11 +14,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nghyane/llm-mux/internal/json"
+
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/nghyane/llm-mux/internal/config"
-	"github.com/nghyane/llm-mux/internal/provider"
 	log "github.com/nghyane/llm-mux/internal/logging"
+	"github.com/nghyane/llm-mux/internal/provider"
 )
 
 const (
@@ -35,7 +36,6 @@ type ObjectStoreConfig struct {
 	SecretKey string
 	Region    string
 	Prefix    string
-	LocalRoot string
 	UseSSL    bool
 	PathStyle bool
 }
@@ -45,14 +45,13 @@ type ObjectStoreConfig struct {
 type ObjectTokenStore struct {
 	client     *minio.Client
 	cfg        ObjectStoreConfig
-	spoolRoot  string
 	configPath string
 	authDir    string
 	mu         sync.Mutex
 }
 
 // NewObjectTokenStore initializes an object storage backed token store.
-func NewObjectTokenStore(cfg ObjectStoreConfig) (*ObjectTokenStore, error) {
+func NewObjectTokenStore(cfg ObjectStoreConfig, configPath, authDir string) (*ObjectTokenStore, error) {
 	cfg.Endpoint = strings.TrimSpace(cfg.Endpoint)
 	cfg.Bucket = strings.TrimSpace(cfg.Bucket)
 	cfg.AccessKey = strings.TrimSpace(cfg.AccessKey)
@@ -72,26 +71,28 @@ func NewObjectTokenStore(cfg ObjectStoreConfig) (*ObjectTokenStore, error) {
 		return nil, fmt.Errorf("object store: secret key is required")
 	}
 
-	root := strings.TrimSpace(cfg.LocalRoot)
-	if root == "" {
-		if cwd, err := os.Getwd(); err == nil {
-			root = filepath.Join(cwd, "objectstore")
-		} else {
-			root = filepath.Join(os.TempDir(), "objectstore")
-		}
+	configPath = strings.TrimSpace(configPath)
+	authDir = strings.TrimSpace(authDir)
+	if configPath == "" {
+		return nil, fmt.Errorf("object store: configPath is required")
 	}
-	absRoot, err := filepath.Abs(root)
+	if authDir == "" {
+		return nil, fmt.Errorf("object store: authDir is required")
+	}
+
+	absConfigPath, err := filepath.Abs(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("object store: resolve spool directory: %w", err)
+		return nil, fmt.Errorf("object store: resolve config path: %w", err)
+	}
+	absAuthDir, err := filepath.Abs(authDir)
+	if err != nil {
+		return nil, fmt.Errorf("object store: resolve auth directory: %w", err)
 	}
 
-	configDir := filepath.Join(absRoot, "config")
-	authDir := filepath.Join(absRoot, "auths")
-
-	if err = os.MkdirAll(configDir, 0o700); err != nil {
+	if err = os.MkdirAll(filepath.Dir(absConfigPath), 0o700); err != nil {
 		return nil, fmt.Errorf("object store: create config directory: %w", err)
 	}
-	if err = os.MkdirAll(authDir, 0o700); err != nil {
+	if err = os.MkdirAll(absAuthDir, 0o700); err != nil {
 		return nil, fmt.Errorf("object store: create auth directory: %w", err)
 	}
 
@@ -112,9 +113,8 @@ func NewObjectTokenStore(cfg ObjectStoreConfig) (*ObjectTokenStore, error) {
 	return &ObjectTokenStore{
 		client:     client,
 		cfg:        cfg,
-		spoolRoot:  absRoot,
-		configPath: filepath.Join(configDir, "config.yaml"),
-		authDir:    authDir,
+		configPath: absConfigPath,
+		authDir:    absAuthDir,
 	}, nil
 }
 
