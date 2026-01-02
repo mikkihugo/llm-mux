@@ -136,7 +136,7 @@ providers:
 
 ## Environment Variables
 
-Environment variables override config file values.
+Environment variables override config file values. All use `LLM_MUX_` prefix.
 
 ### Core Settings
 
@@ -146,6 +146,17 @@ Environment variables override config file values.
 | `LLM_MUX_DEBUG` | Enable debug logging | `true` |
 | `LLM_MUX_DISABLE_AUTH` | Disable API key authentication | `true` |
 | `LLM_MUX_API_KEYS` | Comma-separated API keys | `key1,key2,key3` |
+| `LLM_MUX_PROXY_URL` | Global proxy URL | `socks5://proxy:1080` |
+| `LLM_MUX_AUTH_DIR` | OAuth tokens directory | `~/.config/llm-mux/auth` |
+| `LLM_MUX_LOGGING_TO_FILE` | Enable file logging | `true` |
+| `LLM_MUX_REQUEST_RETRY` | Retry attempts | `3` |
+| `LLM_MUX_MAX_RETRY_INTERVAL` | Max retry interval (seconds) | `30` |
+
+### Management API
+
+| Variable | Description |
+|----------|-------------|
+| `LLM_MUX_MANAGEMENT_KEY` | Management API authentication key |
 
 ### Usage Statistics
 
@@ -154,28 +165,45 @@ Environment variables override config file values.
 | `LLM_MUX_USAGE_DSN` | Database connection string | `sqlite://~/.config/llm-mux/usage.db` |
 | `LLM_MUX_USAGE_RETENTION_DAYS` | Days to keep usage records | `30` |
 
-### Management API
+### Storage Backend Selection
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `LLM_MUX_MANAGEMENT_KEY` | Management API key | `your-secret-key` |
-| `MANAGEMENT_PASSWORD` | Alternative management key | `your-secret-key` |
+Use `LLM_MUX_STORE_TYPE` to explicitly select a storage backend for multi-instance deployments:
 
-### Cloud Storage (for multi-instance deployments)
+| Value | Backend |
+|-------|---------|
+| `local` | Local filesystem (default) |
+| `postgres`, `pg` | PostgreSQL |
+| `git` | Git repository |
+| `s3`, `object`, `minio` | S3-compatible object storage |
+
+### PostgreSQL Storage
 
 ```bash
-# PostgreSQL token store
-PGSTORE_DSN=postgresql://user:pass@host:5432/db
+LLM_MUX_STORE_TYPE=postgres
+LLM_MUX_PGSTORE_DSN=postgresql://user:pass@host:5432/db
+LLM_MUX_PGSTORE_SCHEMA=llm_mux          # optional
+LLM_MUX_PGSTORE_LOCAL_PATH=/tmp/cache   # local cache
+```
 
-# S3-compatible storage
-OBJECTSTORE_ENDPOINT=https://s3.amazonaws.com
-OBJECTSTORE_BUCKET=llm-mux-tokens
-OBJECTSTORE_ACCESS_KEY=...
-OBJECTSTORE_SECRET_KEY=...
+### Git Storage
 
-# Git-backed config
-GITSTORE_GIT_URL=https://github.com/org/config.git
-GITSTORE_GIT_TOKEN=ghp_...
+```bash
+LLM_MUX_STORE_TYPE=git
+LLM_MUX_GITSTORE_URL=https://github.com/org/config.git
+LLM_MUX_GITSTORE_USERNAME=user
+LLM_MUX_GITSTORE_TOKEN=ghp_...
+LLM_MUX_GITSTORE_LOCAL_PATH=/tmp/git-cache
+```
+
+### S3/Object Storage
+
+```bash
+LLM_MUX_STORE_TYPE=s3
+LLM_MUX_OBJECTSTORE_ENDPOINT=https://s3.amazonaws.com
+LLM_MUX_OBJECTSTORE_BUCKET=llm-mux-tokens
+LLM_MUX_OBJECTSTORE_ACCESS_KEY=...
+LLM_MUX_OBJECTSTORE_SECRET_KEY=...
+LLM_MUX_OBJECTSTORE_LOCAL_PATH=/tmp/s3-cache
 ```
 
 ---

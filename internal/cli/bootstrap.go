@@ -6,13 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +17,7 @@ import (
 	configaccess "github.com/nghyane/llm-mux/internal/access/config_access"
 	authlogin "github.com/nghyane/llm-mux/internal/auth/login"
 	"github.com/nghyane/llm-mux/internal/buildinfo"
+	"github.com/nghyane/llm-mux/internal/cli/env"
 	"github.com/nghyane/llm-mux/internal/config"
 	"github.com/nghyane/llm-mux/internal/json"
 	log "github.com/nghyane/llm-mux/internal/logging"
@@ -50,224 +48,35 @@ func Bootstrap(configPath string) (*BootstrapResult, error) {
 		}
 	}
 
-	lookupEnv := func(keys ...string) (string, bool) {
-		for _, key := range keys {
-			if value, ok := os.LookupEnv(key); ok {
-				if trimmed := strings.TrimSpace(value); trimmed != "" {
-					return trimmed, true
-				}
-			}
-		}
-		return "", false
-	}
-
-	var (
-		usePostgresStore     bool
-		pgStoreDSN           string
-		pgStoreSchema        string
-		pgStoreLocalPath     string
-		pgStoreInst          *store.PostgresStore
-		useGitStore          bool
-		gitStoreRemoteURL    string
-		gitStoreUser         string
-		gitStorePassword     string
-		gitStoreLocalPath    string
-		gitStoreInst         *store.GitTokenStore
-		gitStoreRoot         string
-		useObjectStore       bool
-		objectStoreEndpoint  string
-		objectStoreAccess    string
-		objectStoreSecret    string
-		objectStoreBucket    string
-		objectStoreLocalPath string
-		objectStoreInst      *store.ObjectTokenStore
-	)
-
 	writableBase := util.WritablePath()
-
-	// Check for Postgres store
-	if value, ok := lookupEnv("PGSTORE_DSN", "pgstore_dsn"); ok {
-		usePostgresStore = true
-		pgStoreDSN = value
-	}
-	if usePostgresStore {
-		if value, ok := lookupEnv("PGSTORE_SCHEMA", "pgstore_schema"); ok {
-			pgStoreSchema = value
-		}
-		if value, ok := lookupEnv("PGSTORE_LOCAL_PATH", "pgstore_local_path"); ok {
-			pgStoreLocalPath = value
-		}
-		if pgStoreLocalPath == "" {
-			if writableBase != "" {
-				pgStoreLocalPath = writableBase
-			} else {
-				pgStoreLocalPath = wd
-			}
-		}
-		useGitStore = false
-	}
-
-	// Check for Git store
-	if value, ok := lookupEnv("GITSTORE_GIT_URL", "gitstore_git_url"); ok {
-		useGitStore = true
-		gitStoreRemoteURL = value
-	}
-	if value, ok := lookupEnv("GITSTORE_GIT_USERNAME", "gitstore_git_username"); ok {
-		gitStoreUser = value
-	}
-	if value, ok := lookupEnv("GITSTORE_GIT_TOKEN", "gitstore_git_token"); ok {
-		gitStorePassword = value
-	}
-	if value, ok := lookupEnv("GITSTORE_LOCAL_PATH", "gitstore_local_path"); ok {
-		gitStoreLocalPath = value
-	}
-
-	// Check for Object store
-	if value, ok := lookupEnv("OBJECTSTORE_ENDPOINT", "objectstore_endpoint"); ok {
-		useObjectStore = true
-		objectStoreEndpoint = value
-	}
-	if value, ok := lookupEnv("OBJECTSTORE_ACCESS_KEY", "objectstore_access_key"); ok {
-		objectStoreAccess = value
-	}
-	if value, ok := lookupEnv("OBJECTSTORE_SECRET_KEY", "objectstore_secret_key"); ok {
-		objectStoreSecret = value
-	}
-	if value, ok := lookupEnv("OBJECTSTORE_BUCKET", "objectstore_bucket"); ok {
-		objectStoreBucket = value
-	}
-	if value, ok := lookupEnv("OBJECTSTORE_LOCAL_PATH", "objectstore_local_path"); ok {
-		objectStoreLocalPath = value
-	}
+	storeCfg := store.ParseFromEnv(env.LookupEnv, writableBase)
 
 	var cfg *config.Config
 	var configFilePath string
+	var storeResult *store.StoreResult
 
-	if usePostgresStore {
-		if pgStoreLocalPath == "" {
-			pgStoreLocalPath = wd
-		}
-		pgStoreLocalPath = filepath.Join(pgStoreLocalPath, "pgstore")
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		pgStoreInst, err = store.NewPostgresStore(ctx, store.PostgresStoreConfig{
-			DSN:      pgStoreDSN,
-			Schema:   pgStoreSchema,
-			SpoolDir: pgStoreLocalPath,
-		})
-		cancel()
+	// Initialize store if configured
+	if storeCfg.IsConfigured() {
+		ctx := context.Background()
+		storeResult, err = store.NewStore(ctx, storeCfg)
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize postgres token store: %w", err)
+			return nil, fmt.Errorf("failed to initialize store: %w", err)
 		}
-		ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
-		if errBootstrap := pgStoreInst.Bootstrap(ctx); errBootstrap != nil {
-			cancel()
-			return nil, fmt.Errorf("failed to bootstrap postgres-backed config: %w", errBootstrap)
-		}
-		cancel()
-		configFilePath = pgStoreInst.ConfigPath()
+
+		configFilePath = storeResult.ConfigPath
 		cfg, err = config.LoadConfigOptional(configFilePath, false)
-		if err == nil {
-			cfg.AuthDir = pgStoreInst.AuthDir()
-			log.Infof("postgres-backed token store enabled, workspace path: %s", pgStoreInst.WorkDir())
+		if err == nil && cfg != nil {
+			cfg.AuthDir = storeResult.AuthDir
 		}
-	} else if useObjectStore {
-		if objectStoreLocalPath == "" {
-			if writableBase != "" {
-				objectStoreLocalPath = writableBase
-			} else {
-				objectStoreLocalPath = wd
-			}
-		}
-		objectStoreRoot := filepath.Join(objectStoreLocalPath, "objectstore")
-		resolvedEndpoint := strings.TrimSpace(objectStoreEndpoint)
-		useSSL := true
-		if strings.Contains(resolvedEndpoint, "://") {
-			parsed, errParse := url.Parse(resolvedEndpoint)
-			if errParse != nil {
-				return nil, fmt.Errorf("failed to parse object store endpoint %q: %w", objectStoreEndpoint, errParse)
-			}
-			switch strings.ToLower(parsed.Scheme) {
-			case "http":
-				useSSL = false
-			case "https":
-				useSSL = true
-			default:
-				return nil, fmt.Errorf("unsupported object store scheme %q (only http and https are allowed)", parsed.Scheme)
-			}
-			if parsed.Host == "" {
-				return nil, fmt.Errorf("object store endpoint %q is missing host information", objectStoreEndpoint)
-			}
-			resolvedEndpoint = parsed.Host
-			if parsed.Path != "" && parsed.Path != "/" {
-				resolvedEndpoint = strings.TrimSuffix(parsed.Host+parsed.Path, "/")
-			}
-		}
-		resolvedEndpoint = strings.TrimRight(resolvedEndpoint, "/")
-		objCfg := store.ObjectStoreConfig{
-			Endpoint:  resolvedEndpoint,
-			Bucket:    objectStoreBucket,
-			AccessKey: objectStoreAccess,
-			SecretKey: objectStoreSecret,
-			LocalRoot: objectStoreRoot,
-			UseSSL:    useSSL,
-			PathStyle: true,
-		}
-		objectStoreInst, err = store.NewObjectTokenStore(objCfg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize object token store: %w", err)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if errBootstrap := objectStoreInst.Bootstrap(ctx); errBootstrap != nil {
-			cancel()
-			return nil, fmt.Errorf("failed to bootstrap object-backed config: %w", errBootstrap)
-		}
-		cancel()
-		configFilePath = objectStoreInst.ConfigPath()
-		cfg, err = config.LoadConfigOptional(configFilePath, false)
-		if err == nil {
-			if cfg == nil {
-				cfg = &config.Config{}
-			}
-			cfg.AuthDir = objectStoreInst.AuthDir()
-			log.Infof("object-backed token store enabled, bucket: %s", objectStoreBucket)
-		}
-	} else if useGitStore {
-		if gitStoreLocalPath == "" {
-			if writableBase != "" {
-				gitStoreLocalPath = writableBase
-			} else {
-				gitStoreLocalPath = wd
-			}
-		}
-		gitStoreRoot = filepath.Join(gitStoreLocalPath, "gitstore")
-		authDir := filepath.Join(gitStoreRoot, "auths")
-		gitStoreInst = store.NewGitTokenStore(gitStoreRemoteURL, gitStoreUser, gitStorePassword)
-		gitStoreInst.SetBaseDir(authDir)
-		if errRepo := gitStoreInst.EnsureRepository(); errRepo != nil {
-			return nil, fmt.Errorf("failed to prepare git token store: %w", errRepo)
-		}
-		configFilePath = gitStoreInst.ConfigPath()
-		if configFilePath == "" {
-			configFilePath = filepath.Join(gitStoreRoot, "config", "config.yaml")
-		}
-		if _, statErr := os.Stat(configFilePath); errors.Is(statErr, fs.ErrNotExist) {
-			if errDir := os.MkdirAll(filepath.Dir(configFilePath), 0o700); errDir != nil {
-				return nil, fmt.Errorf("failed to create config directory: %w", errDir)
-			}
-			if errWrite := os.WriteFile(configFilePath, config.GenerateDefaultConfigYAML(), 0o600); errWrite != nil {
-				return nil, fmt.Errorf("failed to write config from template: %w", errWrite)
-			}
-			if errCommit := gitStoreInst.PersistConfig(context.Background()); errCommit != nil {
-				return nil, fmt.Errorf("failed to commit initial git-backed config: %w", errCommit)
-			}
-			log.Infof("git-backed config initialized from template: %s", configFilePath)
-		} else if statErr != nil {
-			return nil, fmt.Errorf("failed to inspect git-backed config: %w", statErr)
-		}
-		cfg, err = config.LoadConfigOptional(configFilePath, false)
-		if err == nil {
-			cfg.AuthDir = gitStoreInst.AuthDir()
-			log.Infof("git-backed token store enabled, repository path: %s", gitStoreRoot)
+
+		// Log store initialization
+		switch storeCfg.Type {
+		case store.TypePostgres:
+			log.Infof("postgres-backed token store enabled")
+		case store.TypeObject:
+			log.Infof("object-backed token store enabled, bucket: %s", storeCfg.Object.Bucket)
+		case store.TypeGit:
+			log.Infof("git-backed token store enabled")
 		}
 	} else if configPath != "" {
 		// Expand environment variables and ~ to absolute path
@@ -303,34 +112,7 @@ func Bootstrap(configPath string) (*BootstrapResult, error) {
 
 	// Initialize usage persistence if enabled
 	if cfg.Usage.DSN != "" {
-		var flushInterval time.Duration
-		if cfg.Usage.FlushInterval != "" {
-			if d, parseErr := time.ParseDuration(cfg.Usage.FlushInterval); parseErr == nil {
-				flushInterval = d
-			}
-		}
-		if flushInterval == 0 {
-			flushInterval = 5 * time.Second
-		}
-		batchSize := cfg.Usage.BatchSize
-		if batchSize == 0 {
-			batchSize = 100
-		}
-		retentionDays := cfg.Usage.RetentionDays
-		if retentionDays == 0 {
-			retentionDays = 30
-		}
-		backendCfg := usage.BackendConfig{
-			DSN:           cfg.Usage.DSN,
-			BatchSize:     batchSize,
-			FlushInterval: flushInterval,
-			RetentionDays: retentionDays,
-		}
-		if initErr := usage.Initialize(backendCfg); initErr != nil {
-			log.Warnf("Failed to initialize usage backend: %v", initErr)
-		} else {
-			log.Infof("Usage backend initialized: %s", cfg.Usage.DSN)
-		}
+		initUsageBackend(cfg)
 	}
 
 	provider.SetQuotaCooldownDisabled(cfg.DisableCooling)
@@ -342,12 +124,8 @@ func Bootstrap(configPath string) (*BootstrapResult, error) {
 	}
 
 	// Register the shared token store
-	if usePostgresStore {
-		authlogin.RegisterTokenStore(pgStoreInst)
-	} else if useObjectStore {
-		authlogin.RegisterTokenStore(objectStoreInst)
-	} else if useGitStore {
-		authlogin.RegisterTokenStore(gitStoreInst)
+	if storeResult != nil && storeResult.Store != nil {
+		authlogin.RegisterTokenStore(storeResult.Store)
 	} else {
 		authlogin.RegisterTokenStore(authlogin.NewFileTokenStore())
 	}
@@ -359,6 +137,38 @@ func Bootstrap(configPath string) (*BootstrapResult, error) {
 		Config:         cfg,
 		ConfigFilePath: configFilePath,
 	}, nil
+}
+
+// initUsageBackend initializes the usage persistence backend.
+func initUsageBackend(cfg *config.Config) {
+	var flushInterval time.Duration
+	if cfg.Usage.FlushInterval != "" {
+		if d, parseErr := time.ParseDuration(cfg.Usage.FlushInterval); parseErr == nil {
+			flushInterval = d
+		}
+	}
+	if flushInterval == 0 {
+		flushInterval = 5 * time.Second
+	}
+	batchSize := cfg.Usage.BatchSize
+	if batchSize == 0 {
+		batchSize = 100
+	}
+	retentionDays := cfg.Usage.RetentionDays
+	if retentionDays == 0 {
+		retentionDays = 30
+	}
+	backendCfg := usage.BackendConfig{
+		DSN:           cfg.Usage.DSN,
+		BatchSize:     batchSize,
+		FlushInterval: flushInterval,
+		RetentionDays: retentionDays,
+	}
+	if initErr := usage.Initialize(backendCfg); initErr != nil {
+		log.Warnf("Failed to initialize usage backend: %v", initErr)
+	} else {
+		log.Infof("Usage backend initialized: %s", cfg.Usage.DSN)
+	}
 }
 
 // autoInitConfig silently creates config on first run
@@ -377,50 +187,22 @@ func autoInitConfig(configPath string) {
 
 // applyEnvOverrides applies environment variable overrides for cloud deployment.
 func applyEnvOverrides(cfg *config.Config) {
-	lookupEnv := func(keys ...string) (string, bool) {
-		for _, key := range keys {
-			if value, ok := os.LookupEnv(key); ok {
-				if trimmed := strings.TrimSpace(value); trimmed != "" {
-					return trimmed, true
-				}
-			}
-		}
-		return "", false
-	}
-
-	lookupEnvInt := func(keys ...string) (int, bool) {
-		if value, ok := lookupEnv(keys...); ok {
-			if n, err := strconv.Atoi(value); err == nil {
-				return n, true
-			}
-		}
-		return 0, false
-	}
-
-	lookupEnvBool := func(keys ...string) (bool, bool) {
-		if value, ok := lookupEnv(keys...); ok {
-			v := strings.ToLower(value)
-			return v == "true" || v == "1" || v == "yes", true
-		}
-		return false, false
-	}
-
-	if port, ok := lookupEnvInt("LLM_MUX_PORT"); ok {
+	if port, ok := env.LookupEnvInt("LLM_MUX_PORT"); ok {
 		cfg.Port = port
 		log.Infof("Port overridden by env: %d", port)
 	}
 
-	if debug, ok := lookupEnvBool("LLM_MUX_DEBUG"); ok {
+	if debug, ok := env.LookupEnvBool("LLM_MUX_DEBUG"); ok {
 		cfg.Debug = debug
 		log.Infof("Debug overridden by env: %v", debug)
 	}
 
-	if disableAuth, ok := lookupEnvBool("LLM_MUX_DISABLE_AUTH"); ok {
+	if disableAuth, ok := env.LookupEnvBool("LLM_MUX_DISABLE_AUTH"); ok {
 		cfg.DisableAuth = disableAuth
 		log.Infof("DisableAuth overridden by env: %v", disableAuth)
 	}
 
-	if keys, ok := lookupEnv("LLM_MUX_API_KEYS"); ok {
+	if keys, ok := env.LookupEnv("LLM_MUX_API_KEYS"); ok {
 		cfg.APIKeys = nil
 		for _, k := range strings.Split(keys, ",") {
 			if trimmed := strings.TrimSpace(k); trimmed != "" {
@@ -430,14 +212,39 @@ func applyEnvOverrides(cfg *config.Config) {
 		log.Infof("API keys overridden by env: %d keys", len(cfg.APIKeys))
 	}
 
-	if dsn, ok := lookupEnv("LLM_MUX_USAGE_DSN"); ok {
+	if dsn, ok := env.LookupEnv("LLM_MUX_USAGE_DSN"); ok {
 		cfg.Usage.DSN = dsn
 		log.Infof("Usage DSN overridden by env")
 	}
 
-	if days, ok := lookupEnvInt("LLM_MUX_USAGE_RETENTION_DAYS"); ok {
+	if days, ok := env.LookupEnvInt("LLM_MUX_USAGE_RETENTION_DAYS"); ok {
 		cfg.Usage.RetentionDays = days
 		log.Infof("Usage retention days overridden by env: %d", days)
+	}
+
+	if proxyURL, ok := env.LookupEnv("LLM_MUX_PROXY_URL"); ok {
+		cfg.ProxyURL = proxyURL
+		log.Infof("Proxy URL overridden by env")
+	}
+
+	if authDir, ok := env.LookupEnv("LLM_MUX_AUTH_DIR"); ok {
+		cfg.AuthDir = authDir
+		log.Infof("Auth dir overridden by env: %s", authDir)
+	}
+
+	if loggingToFile, ok := env.LookupEnvBool("LLM_MUX_LOGGING_TO_FILE"); ok {
+		cfg.LoggingToFile = loggingToFile
+		log.Infof("Logging to file overridden by env: %v", loggingToFile)
+	}
+
+	if retry, ok := env.LookupEnvInt("LLM_MUX_REQUEST_RETRY"); ok {
+		cfg.RequestRetry = retry
+		log.Infof("Request retry overridden by env: %d", retry)
+	}
+
+	if maxRetryInterval, ok := env.LookupEnvInt("LLM_MUX_MAX_RETRY_INTERVAL"); ok {
+		cfg.MaxRetryInterval = maxRetryInterval
+		log.Infof("Max retry interval overridden by env: %d", maxRetryInterval)
 	}
 }
 

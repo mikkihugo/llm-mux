@@ -63,9 +63,11 @@ func GenerateManagementKey() (string, error) {
 
 // LoadCredentials loads credentials with priority: ENV > file
 func LoadCredentials() (*Credentials, error) {
-	// Priority 1: Environment variable
-	if key := strings.TrimSpace(os.Getenv("MANAGEMENT_PASSWORD")); key != "" {
-		return &Credentials{ManagementKey: key, CreatedAt: time.Now(), Version: CredentialsVersion}, nil
+	// Priority 1: Environment variable (LLM_MUX_MANAGEMENT_KEY with legacy fallback)
+	for _, envKey := range []string{"LLM_MUX_MANAGEMENT_KEY", "MANAGEMENT_PASSWORD"} {
+		if key := strings.TrimSpace(os.Getenv(envKey)); key != "" {
+			return &Credentials{ManagementKey: key, CreatedAt: time.Now(), Version: CredentialsVersion}, nil
+		}
 	}
 
 	// Priority 2: Cache
