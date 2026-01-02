@@ -114,9 +114,10 @@ func (w *Watcher) prepareAuthUpdatesLocked(auths []*provider.Auth) []AuthUpdate 
 	}
 	updates := make([]AuthUpdate, 0, len(newState)+len(w.currentAuths))
 	for id, auth := range newState {
-		if existing, ok := w.currentAuths[id]; !ok {
+		existing, ok := w.currentAuths[id]
+		if !ok {
 			updates = append(updates, AuthUpdate{Action: AuthUpdateActionAdd, ID: id, Auth: auth.Clone()})
-		} else if !authEqual(existing, auth) {
+		} else if isMaterialChange(existing, auth) {
 			updates = append(updates, AuthUpdate{Action: AuthUpdateActionModify, ID: id, Auth: auth.Clone()})
 		}
 	}

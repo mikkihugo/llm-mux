@@ -30,6 +30,7 @@ type Auth struct {
 	LastError        *Error                 `json:"last_error,omitempty"`
 	CreatedAt        time.Time              `json:"created_at"`
 	UpdatedAt        time.Time              `json:"updated_at"`
+	MaterialVersion  int64                  `json:"material_version"`
 	LastRefreshedAt  time.Time              `json:"last_refreshed_at"`
 	NextRefreshAfter time.Time              `json:"next_refresh_after"`
 	NextRetryAfter   time.Time              `json:"next_retry_after"`
@@ -96,6 +97,13 @@ func (a *Auth) Clone() *Auth {
 	}
 	copyAuth.Runtime = a.Runtime
 	return &copyAuth
+}
+
+func IncrementMaterialVersion(auth *Auth) {
+	if auth == nil {
+		return
+	}
+	auth.MaterialVersion++
 }
 
 // EnsureIndex returns the global index, assigning one if it was not set yet.

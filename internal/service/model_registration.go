@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nghyane/llm-mux/internal/config"
@@ -13,11 +14,19 @@ import (
 	"github.com/nghyane/llm-mux/internal/wsrelay"
 )
 
+var lastRegisteredVersion sync.Map // map[authID]int64
+
 // registerModelsForAuth (re)binds provider models in the global registry using the core auth ID as client identifier.
 func registerModelsForAuth(a *provider.Auth, cfg *config.Config, wsGateway *wsrelay.Manager) {
 	if a == nil || a.ID == "" {
 		log.Debugf("registerModelsForAuth: auth is nil or empty ID")
 		return
+	}
+	if lastVer, ok := lastRegisteredVersion.Load(a.ID); ok {
+		if a.MaterialVersion <= lastVer.(int64) {
+			log.Debugf("registerModelsForAuth: skipping %s (version %d <= %d)", a.ID, a.MaterialVersion, lastVer)
+			return
+		}
 	}
 	authKind := strings.ToLower(strings.TrimSpace(a.Attributes["auth_kind"]))
 	if a.Attributes != nil {
@@ -143,6 +152,7 @@ func registerModelsForAuth(a *provider.Auth, cfg *config.Config, wsGateway *wsre
 		models = applyProviderPriority(models, key, cfg)
 		log.Debugf("registerModelsForAuth: registering %d models for client=%s, key=%s", len(models), a.ID, key)
 		GlobalModelRegistry().RegisterClient(a.ID, key, models)
+		lastRegisteredVersion.Store(a.ID, a.MaterialVersion)
 		return
 	}
 

@@ -175,6 +175,7 @@ func normalizeAuth(a *provider.Auth) *provider.Auth {
 	clone := a.Clone()
 	clone.CreatedAt = time.Time{}
 	clone.UpdatedAt = time.Time{}
+	clone.MaterialVersion = 0
 	clone.LastRefreshedAt = time.Time{}
 	clone.NextRefreshAfter = time.Time{}
 	clone.Runtime = nil
@@ -368,4 +369,73 @@ func addConfigHeadersToAttrs(headers map[string]string, attrs map[string]string)
 		}
 		attrs["header:"+key] = val
 	}
+}
+
+// materialMetadataKeys defines credential fields that require model re-registration when changed.
+var materialMetadataKeys = []string{
+	"refresh_token",
+	"client_id",
+	"client_secret",
+}
+
+// volatileAttributeKeys defines runtime/transient attribute keys ignored for material change detection.
+var volatileAttributeKeys = map[string]struct{}{
+	"last_error":        {},
+	"status_message":    {},
+	"last_refreshed_at": {},
+}
+
+// isMaterialChange returns true if the auth change requires model re-registration.
+// Material changes: Provider, credentials (refresh_token, client_id, client_secret), Attributes.
+// Volatile changes (access_token, expiry, quota, timestamps) return false.
+func isMaterialChange(old, new *provider.Auth) bool {
+	if old == nil || new == nil {
+		return old != new
+	}
+	if old.Provider != new.Provider {
+		return true
+	}
+	for _, key := range materialMetadataKeys {
+		if metadataString(old.Metadata, key) != metadataString(new.Metadata, key) {
+			return true
+		}
+	}
+	return !equalMaterialAttributes(old.Attributes, new.Attributes)
+}
+
+func metadataString(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func equalMaterialAttributes(a, b map[string]string) bool {
+	countA := countMaterialAttrs(a)
+	countB := countMaterialAttrs(b)
+	if countA != countB {
+		return false
+	}
+	for k, v := range a {
+		if _, volatile := volatileAttributeKeys[k]; volatile {
+			continue
+		}
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+func countMaterialAttrs(attrs map[string]string) int {
+	count := 0
+	for k := range attrs {
+		if _, volatile := volatileAttributeKeys[k]; !volatile {
+			count++
+		}
+	}
+	return count
 }
