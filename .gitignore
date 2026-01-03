@@ -56,3 +56,7 @@ server.pid
 gitstore.bak
 custom-provider
 llm-mux
+
+# Task reference files
+QUOTA_OPTIMIZATION_TASK.md
+rate_limits.html
