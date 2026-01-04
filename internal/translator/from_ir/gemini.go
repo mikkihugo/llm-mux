@@ -603,7 +603,7 @@ func (p *VertexEnvelopeProvider) buildClaudeContents(req *ir.UnifiedChatRequest)
 	contents := make([]any, len(messages))
 	for i, m := range messages {
 		content := map[string]any{"role": m.role, "parts": m.parts}
-		if m.cacheControl != nil {
+		if m.cacheControl != nil && !hasThinkingParts(m.parts) {
 			content["cacheControl"] = buildCacheControlMap(m.cacheControl)
 		}
 		contents[i] = content
@@ -702,6 +702,21 @@ func buildCacheControlMap(cc *ir.CacheControl) map[string]any {
 		result["ttl"] = *cc.TTL
 	}
 	return result
+}
+
+// hasThinkingParts checks if any part in the slice is a thinking block.
+// Vertex Claude API does not allow cacheControl on contents containing thinking parts.
+func hasThinkingParts(parts []any) bool {
+	for _, p := range parts {
+		if m, ok := p.(map[string]any); ok {
+			if thought, exists := m["thought"]; exists {
+				if b, ok := thought.(bool); ok && b {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (p *VertexEnvelopeProvider) buildClaudeAssistantParts(msg *ir.Message) []any {

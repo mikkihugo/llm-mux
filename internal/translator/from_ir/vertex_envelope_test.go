@@ -291,6 +291,68 @@ func TestVertexEnvelopeProvider_ClaudeThinkingConfig(t *testing.T) {
 	}
 }
 
+func TestVertexEnvelopeProvider_ClaudeThinkingBlocksNoCacheControl(t *testing.T) {
+	req := &ir.UnifiedChatRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []ir.Message{
+			{
+				Role:    ir.RoleUser,
+				Content: []ir.ContentPart{{Type: ir.ContentTypeText, Text: "Hello"}},
+				CacheControl: &ir.CacheControl{
+					Type: "ephemeral",
+				},
+			},
+			{
+				Role: ir.RoleAssistant,
+				Content: []ir.ContentPart{
+					{Type: ir.ContentTypeReasoning, Reasoning: "Let me think...", ThoughtSignature: []byte("sig123")},
+					{Type: ir.ContentTypeText, Text: "Response"},
+				},
+				CacheControl: &ir.CacheControl{
+					Type: "ephemeral",
+				},
+			},
+			{
+				Role:    ir.RoleUser,
+				Content: []ir.ContentPart{{Type: ir.ContentTypeText, Text: "Follow up"}},
+			},
+		},
+		MaxTokens: ir.Ptr(1024),
+	}
+
+	p := &VertexEnvelopeProvider{}
+	payload, err := p.ConvertRequest(req)
+	if err != nil {
+		t.Fatalf("ConvertRequest failed: %v", err)
+	}
+
+	parsed := gjson.ParseBytes(payload)
+	contents := parsed.Get("request.contents").Array()
+
+	if len(contents) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(contents))
+	}
+
+	if !contents[0].Get("cacheControl").Exists() {
+		t.Error("user message should have cacheControl")
+	}
+
+	if contents[1].Get("cacheControl").Exists() {
+		t.Error("assistant message with thinking parts should NOT have cacheControl (Vertex Claude API restriction)")
+	}
+
+	hasThought := false
+	for _, part := range contents[1].Get("parts").Array() {
+		if part.Get("thought").Bool() {
+			hasThought = true
+			break
+		}
+	}
+	if !hasThought {
+		t.Error("assistant message should have thinking part with thought=true")
+	}
+}
+
 func TestVertexEnvelopeProvider_ClaudeTools(t *testing.T) {
 	req := &ir.UnifiedChatRequest{
 		Model: "claude-sonnet-4-20250514",
