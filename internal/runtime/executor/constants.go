@@ -4,7 +4,9 @@ import "time"
 
 const DefaultStreamBufferSize = 20 * 1024 * 1024
 
-const DefaultScannerBufferSize = 64 * 1024
+// DefaultScannerBufferSize increased from 64KB to 256KB to reduce buffer
+// reallocations when streaming large responses with big context windows
+const DefaultScannerBufferSize = 256 * 1024
 
 const (
 	DefaultClaudeUserAgent      = "claude-cli/1.0.83 (external, cli)"
