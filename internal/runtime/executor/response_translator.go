@@ -99,18 +99,9 @@ func parseClaudeResponse(response []byte) (*ParsedResponse, error) {
 	return &ParsedResponse{Messages: messages, Usage: usage}, nil
 }
 
-// parseGeminiResponse parses Gemini format to IR with metadata.
+// parseGeminiResponse parses Gemini/Gemini-CLI format to IR with metadata.
 func parseGeminiResponse(response []byte) (*ParsedResponse, error) {
 	messages, usage, meta, err := to_ir.ParseGeminiResponseMeta(response)
-	if err != nil {
-		return nil, err
-	}
-	return &ParsedResponse{Messages: messages, Usage: usage, Meta: meta}, nil
-}
-
-// parseGeminiCLIResponse parses Gemini CLI format to IR with metadata.
-func parseGeminiCLIResponse(response []byte) (*ParsedResponse, error) {
-	messages, usage, meta, err := to_ir.ParseGeminiResponseMetaWithContext(response, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +140,10 @@ func TranslateResponseNonStream(cfg *config.Config, from, to provider.Format, re
 	parsed, err := parseSourceResponse(fromStr, response)
 	if err != nil {
 		return nil, err
+	}
+	if parsed == nil {
+		// Unknown source format, return original response
+		return response, nil
 	}
 
 	// Convert IR to target format
@@ -202,10 +197,8 @@ func parseSourceResponse(from string, response []byte) (*ParsedResponse, error) 
 		return parseOpenAIResponse(response)
 	case "claude":
 		return parseClaudeResponse(response)
-	case "gemini":
+	case "gemini", "gemini-cli":
 		return parseGeminiResponse(response)
-	case "gemini-cli":
-		return parseGeminiCLIResponse(response)
 	default:
 		return nil, nil
 	}

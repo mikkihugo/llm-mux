@@ -21,6 +21,9 @@ type StreamTranslator struct {
 }
 
 func NewStreamTranslator(cfg *config.Config, from provider.Format, to, model, messageID string, ctx *StreamContext) *StreamTranslator {
+	if ctx == nil {
+		ctx = NewStreamContext()
+	}
 	st := &StreamTranslator{
 		cfg:       cfg,
 		from:      from,
@@ -108,7 +111,7 @@ func (t *StreamTranslator) Flush() ([][]byte, error) {
 	var allChunks [][]byte
 
 	// Finalize Claude parser state (embedded in ClaudeState)
-	if t.ctx.ClaudeState != nil && t.ctx.ClaudeState.ParserState != nil {
+	if t.ctx != nil && t.ctx.ClaudeState != nil && t.ctx.ClaudeState.ParserState != nil {
 		if finalEvent := t.ctx.ClaudeState.ParserState.Finalize(); finalEvent != nil {
 			chunks, err := t.convertAndBuffer(finalEvent)
 			if err != nil {
@@ -118,7 +121,7 @@ func (t *StreamTranslator) Flush() ([][]byte, error) {
 		}
 	}
 
-	if t.ctx.GeminiState != nil {
+	if t.ctx != nil && t.ctx.GeminiState != nil {
 		if finalEvent := t.ctx.GeminiState.Finalize(); finalEvent != nil {
 			chunks, err := t.convertAndBuffer(finalEvent)
 			if err != nil {
