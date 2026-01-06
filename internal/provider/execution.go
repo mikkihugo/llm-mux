@@ -57,6 +57,9 @@ func (m *Manager) executeWithProvider(ctx context.Context, provider string, req 
 
 		if errBreaker != nil {
 			telemetry.RecordError(span, errBreaker)
+			if errors.Is(errBreaker, context.Canceled) || errors.Is(errBreaker, context.DeadlineExceeded) {
+				return Response{}, errBreaker
+			}
 			markResult := Result{AuthID: auth.ID, Provider: provider, Model: req.Model, Success: false}
 			markResult.Error = &Error{Message: errBreaker.Error()}
 			var se StatusCodeError
@@ -115,6 +118,9 @@ func (m *Manager) executeCountWithProvider(ctx context.Context, provider string,
 		})
 
 		if errBreaker != nil {
+			if errors.Is(errBreaker, context.Canceled) || errors.Is(errBreaker, context.DeadlineExceeded) {
+				return Response{}, errBreaker
+			}
 			markResult := Result{AuthID: auth.ID, Provider: provider, Model: req.Model, Success: false}
 			markResult.Error = &Error{Message: errBreaker.Error()}
 			var se StatusCodeError
@@ -170,6 +176,10 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 		}
 		chunks, errStream := executor.ExecuteStream(execCtx, auth, req, opts)
 		if errStream != nil {
+			if errors.Is(errStream, context.Canceled) || errors.Is(errStream, context.DeadlineExceeded) {
+				done(false)
+				return nil, errStream
+			}
 			rerr := &Error{Message: errStream.Error()}
 			var se StatusCodeError
 			if errors.As(errStream, &se) && se != nil {
@@ -211,6 +221,11 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 
 					// Check for errors in chunk
 					if chunk.Err != nil && !failed {
+						if errors.Is(chunk.Err, context.Canceled) || errors.Is(chunk.Err, context.DeadlineExceeded) {
+							m.recordProviderResult(streamProvider, streamModel, true, time.Since(startTime))
+							cbDone(true)
+							return
+						}
 						failed = true
 						rerr := &Error{Message: chunk.Err.Error()}
 						var se StatusCodeError

@@ -187,13 +187,13 @@ func (w *asyncResultWorker) updateAuthState(
 			}
 			category := CategorizeError(statusCode, errMsg)
 
-			if category != CategoryUserError {
+			if category != CategoryUserError && category != CategoryClientCanceled {
 				state.Unavailable = true
 				state.Status = StatusError
 			}
 			state.UpdatedAt = now
 
-			if result.Error != nil && category != CategoryUserError {
+			if result.Error != nil && category != CategoryUserError && category != CategoryClientCanceled {
 				state.LastError = cloneError(result.Error)
 				state.StatusMessage = result.Error.Message
 				auth.LastError = cloneError(result.Error)
@@ -251,7 +251,7 @@ func (w *asyncResultWorker) updateAuthState(
 				state.NextRetryAfter = now.Add(30 * time.Second)
 			}
 
-			if category != CategoryUserError {
+			if category != CategoryUserError && category != CategoryClientCanceled {
 				auth.Status = StatusError
 			}
 			auth.UpdatedAt = now
