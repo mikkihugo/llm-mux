@@ -525,14 +525,14 @@ func (m *Manager) markResultSync(ctx context.Context, result Result) {
 				}
 				category := CategorizeError(statusCode, errMsg)
 
-				// User errors (400) should NOT mark auth as unavailable
-				if category != CategoryUserError {
+				// User errors (400) and client cancellation should NOT mark auth as unavailable
+				if category != CategoryUserError && category != CategoryClientCanceled {
 					state.Unavailable = true
 					state.Status = StatusError
 				}
 				state.UpdatedAt = now
-				// Only record error details for non-user errors
-				if result.Error != nil && category != CategoryUserError {
+				// Only record error details for non-user errors and non-cancellation
+				if result.Error != nil && category != CategoryUserError && category != CategoryClientCanceled {
 					state.LastError = cloneError(result.Error)
 					state.StatusMessage = result.Error.Message
 					auth.LastError = cloneError(result.Error)
@@ -594,7 +594,7 @@ func (m *Manager) markResultSync(ctx context.Context, result Result) {
 				}
 
 				// Only update auth-level status for non-user errors
-				if category != CategoryUserError {
+				if category != CategoryUserError && category != CategoryClientCanceled {
 					auth.Status = StatusError
 				}
 				auth.UpdatedAt = now

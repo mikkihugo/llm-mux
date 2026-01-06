@@ -35,6 +35,10 @@ const (
 	// CategoryNotFound indicates resource not found
 	// Should NOT retry
 	CategoryNotFound
+
+	// CategoryClientCanceled indicates client-side cancellation (context canceled, deadline exceeded)
+	// Should NOT affect provider status - this is client behavior, not provider failure
+	CategoryClientCanceled
 )
 
 // String returns human-readable category name
@@ -52,6 +56,8 @@ func (c ErrorCategory) String() string {
 		return "transient"
 	case CategoryNotFound:
 		return "not_found"
+	case CategoryClientCanceled:
+		return "client_canceled"
 	default:
 		return "unknown"
 	}
@@ -74,7 +80,7 @@ func (c ErrorCategory) ShouldSuspendAuth() bool {
 
 // IsUserFault returns true if error is caused by user's request
 func (c ErrorCategory) IsUserFault() bool {
-	return c == CategoryUserError || c == CategoryNotFound
+	return c == CategoryUserError || c == CategoryNotFound || c == CategoryClientCanceled
 }
 
 // CategorizeHTTPStatus determines category from HTTP status code
@@ -108,6 +114,11 @@ func CategorizeHTTPStatus(statusCode int) ErrorCategory {
 
 // CategorizeError determines category from error message and status code
 func CategorizeError(statusCode int, message string) ErrorCategory {
+	// Check for context cancellation first - should not affect provider status
+	if isContextCanceledError(message) {
+		return CategoryClientCanceled
+	}
+
 	// Check for OAuth revoked errors first (most specific)
 	if isOAuthRevokedError(message) {
 		return CategoryAuthRevoked
@@ -166,4 +177,13 @@ func isQuotaError(msg string) bool {
 		strings.Contains(lower, "quota") ||
 		strings.Contains(lower, "rate limit") ||
 		strings.Contains(lower, "too many requests")
+}
+
+func isContextCanceledError(msg string) bool {
+	if msg == "" {
+		return false
+	}
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "context canceled") ||
+		strings.Contains(lower, "context deadline exceeded")
 }
