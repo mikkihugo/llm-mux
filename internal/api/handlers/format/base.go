@@ -13,7 +13,6 @@ import (
 	"github.com/nghyane/llm-mux/internal/provider"
 	"github.com/nghyane/llm-mux/internal/registry"
 	"github.com/nghyane/llm-mux/internal/util"
-	"github.com/tidwall/gjson"
 )
 
 type ErrorResponse struct {
@@ -230,8 +229,12 @@ func (h *BaseAPIHandler) ExecuteStreamWithAuthManager(ctx context.Context, handl
 	return nil, errChan
 }
 
+// wrapStreamChannel transforms a StreamChunk channel into separate data and error channels.
+// Errors are detected via StreamChunk.Err which is set by the provider layer.
+// Note: SSE inline errors (data: {"error":...}) are handled by the provider/executor layer,
+// not here - this avoids JSON parsing overhead on every chunk in the hot path.
 func (h *BaseAPIHandler) wrapStreamChannel(chunks <-chan provider.StreamChunk) (<-chan []byte, <-chan *interfaces.ErrorMessage) {
-	dataChan := make(chan []byte, 32) // Match upstream RunSSEStream buffer size
+	dataChan := make(chan []byte, 128) // Match provider layer buffer size
 	errChan := make(chan *interfaces.ErrorMessage, 1)
 	go func() {
 		defer close(dataChan)
@@ -243,29 +246,6 @@ func (h *BaseAPIHandler) wrapStreamChannel(chunks <-chan provider.StreamChunk) (
 				return
 			}
 			if len(chunk.Payload) > 0 {
-				// Check if payload is an error message
-				if bytes.HasPrefix(chunk.Payload, []byte("data: {\"error\":")) {
-					// Extract JSON part after "data: "
-					jsonStart := bytes.Index(chunk.Payload, []byte("data: "))
-					if jsonStart >= 0 {
-						jsonData := chunk.Payload[jsonStart+6:] // Skip "data: "
-						// Remove trailing \n\n
-						jsonData = bytes.TrimSuffix(jsonData, []byte("\n\n"))
-						if gjson.ValidBytes(jsonData) {
-							if msg := gjson.GetBytes(jsonData, "error.message"); msg.Exists() {
-								err := fmt.Errorf("streaming error: %s", msg.String())
-								status, addon := extractErrorDetails(err)
-								errChan <- &interfaces.ErrorMessage{StatusCode: status, Error: err, Addon: addon}
-								return
-							}
-						}
-					}
-					// Fallback
-					err := fmt.Errorf("streaming error")
-					status, addon := extractErrorDetails(err)
-					errChan <- &interfaces.ErrorMessage{StatusCode: status, Error: err, Addon: addon}
-					return
-				}
 				dataChan <- chunk.Payload // No clone needed, executor already owns this
 			}
 		}

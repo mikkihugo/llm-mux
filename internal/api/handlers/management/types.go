@@ -84,27 +84,6 @@ type UsagePeriod struct {
 	RetentionDays int       `json:"retention_days"`
 }
 
-// UsageCounters holds the atomic counters (deprecated, use UsageSummary).
-type UsageCounters struct {
-	TotalRequests int64 `json:"total_requests"`
-	SuccessCount  int64 `json:"success_count"`
-	FailureCount  int64 `json:"failure_count"`
-	TotalTokens   int64 `json:"total_tokens"`
-}
-
-// UsageAPIStats represents aggregated per-API stats (deprecated).
-type UsageAPIStats struct {
-	TotalRequests int64                         `json:"total_requests"`
-	TotalTokens   int64                         `json:"total_tokens"`
-	Models        map[string]UsageAPIModelStats `json:"models,omitempty"`
-}
-
-// UsageAPIModelStats represents per-model stats within an API (deprecated).
-type UsageAPIModelStats struct {
-	TotalRequests int64 `json:"total_requests"`
-	TotalTokens   int64 `json:"total_tokens"`
-}
-
 // ConfigUpdateResponse represents the response after updating config.
 type ConfigUpdateResponse struct {
 	Status  string   `json:"status"`

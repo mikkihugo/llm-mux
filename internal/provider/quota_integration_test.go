@@ -72,6 +72,7 @@ func TestQuotaSyncPlugin_TracksFailedRequests(t *testing.T) {
 func TestQuotaManager_IntegrationWithManager(t *testing.T) {
 	qm := NewQuotaManager()
 	manager := NewManager(nil, qm, nil)
+	defer manager.Stop()
 
 	if manager.GetQuotaManager() != qm {
 		t.Error("expected GetQuotaManager to return the configured QuotaManager")
@@ -93,6 +94,10 @@ func TestQuotaManager_IntegrationWithManager(t *testing.T) {
 	}
 
 	manager.MarkResult(context.Background(), result)
+
+	// Wait for async processing to complete
+	// MarkResult is now async so we need to give it time
+	time.Sleep(50 * time.Millisecond)
 
 	state := qm.GetState("auth1")
 	if state == nil {

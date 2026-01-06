@@ -1,13 +1,37 @@
 package executor
 
 import (
+	"context"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nghyane/llm-mux/internal/json"
+	"golang.org/x/sync/singleflight"
 )
+
+// Token refresh group (merged from token_refresh.go)
+const defaultTokenRefreshTimeout = 30 * time.Second
+
+// TokenRefreshGroup deduplicates concurrent token refresh requests using singleflight (merged from token_refresh.go)
+type TokenRefreshGroup struct {
+	sf      singleflight.Group
+	timeout time.Duration
+}
+
+func NewTokenRefreshGroup() *TokenRefreshGroup {
+	return &TokenRefreshGroup{timeout: defaultTokenRefreshTimeout}
+}
+
+func (g *TokenRefreshGroup) Do(key string, fn func(ctx context.Context) (any, error)) (any, error) {
+	result, err, _ := g.sf.Do(key, func() (any, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), g.timeout)
+		defer cancel()
+		return fn(ctx)
+	})
+	return result, err
+}
 
 // TokenExpiry extracts the token expiration time from auth metadata.
 // It checks for "expired" (RFC3339 string) or calculates from "expires_in" + "timestamp".

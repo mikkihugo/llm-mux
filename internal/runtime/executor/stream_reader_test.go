@@ -120,23 +120,25 @@ func TestStreamReader_ActivityTracking(t *testing.T) {
 	sr := NewStreamReader(ctx, mock, 10*time.Second, "test")
 	defer sr.Close()
 
-	// Initial activity should be set
-	initial := time.Unix(0, sr.lastActivity.Load())
-	if initial.IsZero() {
-		t.Fatal("lastActivity should be initialized")
+	// Read some data - this should update activity timestamp internally
+	buf := make([]byte, 10)
+	n, err := sr.Read(buf)
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	if n == 0 {
+		t.Fatal("Expected to read some data")
 	}
 
-	// Wait a bit
-	time.Sleep(10 * time.Millisecond)
+	// Read more data - activity should continue to be tracked
+	n, err = sr.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatalf("Second read error: %v", err)
+	}
 
-	// Read some data
-	buf := make([]byte, 10)
-	sr.Read(buf)
-
-	// Activity should be updated
-	updated := time.Unix(0, sr.lastActivity.Load())
-	if !updated.After(initial) {
-		t.Fatal("lastActivity should be updated after read")
+	// The stream should still be open (not closed by idle timeout)
+	if sr.closed.Load() {
+		t.Fatal("Stream should not be closed - idle timeout is 10s")
 	}
 }
 

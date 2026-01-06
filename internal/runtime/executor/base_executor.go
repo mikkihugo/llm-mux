@@ -9,6 +9,9 @@ import (
 	"github.com/nghyane/llm-mux/internal/provider"
 )
 
+// Context keys for executor-specific values (merged from context_keys.go)
+type altContextKey struct{}
+
 type BaseExecutor struct {
 	Cfg *config.Config
 }

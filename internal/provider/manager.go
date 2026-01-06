@@ -111,6 +111,9 @@ type Manager struct {
 	streamingBreakers map[string]*resilience.StreamingCircuitBreaker
 
 	retryBudget *resilience.RetryBudget
+
+	// Async result processing for reduced lock contention
+	resultWorker *asyncResultWorker
 }
 
 // NewManager constructs a manager with optional custom selector and hook.
@@ -133,6 +136,11 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 		streamingBreakers: make(map[string]*resilience.StreamingCircuitBreaker),
 		retryBudget:       resilience.NewRetryBudget(100), // Allow up to 100 concurrent retries
 	}
+	// Initialize async result worker for reduced lock contention
+	m.resultWorker = newAsyncResultWorker(m, resultWorkerConfig{
+		QueueSize: 2048,
+		Workers:   4,
+	})
 	if lc, ok := selector.(SelectorLifecycle); ok {
 		lc.Start()
 	}
@@ -143,6 +151,10 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 func (m *Manager) Stop() {
 	if m.refreshCancel != nil {
 		m.refreshCancel()
+	}
+	// Stop async result worker
+	if m.resultWorker != nil {
+		m.resultWorker.Stop()
 	}
 	m.mu.RLock()
 	selector := m.selector
@@ -385,6 +397,7 @@ func (m *Manager) ExecuteCount(ctx context.Context, providers []string, req Requ
 
 // ExecuteStream performs a streaming execution using the configured selector and executor.
 // It supports multiple providers for the same model with weighted selection based on performance.
+// Stats tracking is now consolidated in executeStreamWithProvider to reduce wrapper overhead.
 func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req Request, opts Options) (<-chan StreamChunk, error) {
 	normalized := m.normalizeProviders(providers)
 	if len(normalized) == 0 {
@@ -399,7 +412,6 @@ func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req Req
 	}
 
 	var lastErr error
-	var lastProvider string
 	for attempt := 0; attempt < attempts; attempt++ {
 		acquiredBudget := false
 		if attempt > 0 {
@@ -409,9 +421,8 @@ func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req Req
 			acquiredBudget = true
 		}
 
-		start := time.Now()
+		// Stats are now tracked inside executeStreamWithProvider - no need for wrapStreamForStats
 		chunks, errStream := m.executeStreamProvidersOnce(ctx, selected, func(execCtx context.Context, provider string) (<-chan StreamChunk, error) {
-			lastProvider = provider
 			return m.executeStreamWithProvider(execCtx, provider, req, opts)
 		})
 
@@ -419,10 +430,10 @@ func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req Req
 			if acquiredBudget {
 				m.retryBudget.Release()
 			}
-			return m.wrapStreamForStats(ctx, chunks, lastProvider, req.Model, start), nil
+			// Return directly - stats tracking is now inline in executeStreamWithProvider
+			return chunks, nil
 		}
 
-		m.recordProviderResult(lastProvider, req.Model, false, time.Since(start))
 		lastErr = errStream
 
 		if acquiredBudget {
@@ -443,7 +454,23 @@ func (m *Manager) ExecuteStream(ctx context.Context, providers []string, req Req
 }
 
 // MarkResult records an execution result and notifies hooks.
+// Uses async worker to reduce lock contention in the hot path.
 func (m *Manager) MarkResult(ctx context.Context, result Result) {
+	if result.AuthID == "" {
+		return
+	}
+	// Delegate to async worker for non-blocking processing
+	if m.resultWorker != nil {
+		m.resultWorker.Submit(ctx, result)
+		return
+	}
+	// Fallback to sync processing if worker not initialized
+	m.markResultSync(ctx, result)
+}
+
+// markResultSync is the synchronous fallback for MarkResult.
+// Used when async worker is not available or queue is full.
+func (m *Manager) markResultSync(ctx context.Context, result Result) {
 	if result.AuthID == "" {
 		return
 	}
@@ -642,18 +669,22 @@ func (m *Manager) GetByID(id string) (*Auth, bool) {
 }
 
 func (m *Manager) pickNext(ctx context.Context, provider, model string, opts Options, tried map[string]struct{}) (*Auth, ProviderExecutor, error) {
+	// Phase 1: Quick read-locked filter to collect candidate pointers
 	m.mu.RLock()
 	executor, okExecutor := m.executors[provider]
 	if !okExecutor {
 		m.mu.RUnlock()
 		return nil, nil, &Error{Code: "executor_not_found", Message: "executor not registered"}
 	}
-	candidates := make([]*Auth, 0, len(m.auths))
+
 	// Avoid allocation when model doesn't need trimming
 	modelKey := model
 	if len(model) > 0 && (model[0] == ' ' || model[len(model)-1] == ' ') {
 		modelKey = strings.TrimSpace(model)
 	}
+
+	// Collect candidate pointers under lock (cheap - no cloning yet)
+	candidatePtrs := make([]*Auth, 0, len(m.auths))
 	registryRef := registry.GetGlobalRegistry()
 	for _, candidate := range m.auths {
 		if candidate.Provider != provider || candidate.Disabled {
@@ -665,26 +696,32 @@ func (m *Manager) pickNext(ctx context.Context, provider, model string, opts Opt
 		if modelKey != "" && registryRef != nil && !registryRef.ClientSupportsModel(candidate.ID, modelKey) {
 			continue
 		}
-		// Create a shallow clone for the selector to avoid race conditions.
-		// The selector needs to read auth.Runtime concurrently with MarkResult updates.
-		// By cloning here (under RLock), we ensure the selector gets a consistent snapshot.
-		candidates = append(candidates, candidate.Clone())
+		candidatePtrs = append(candidatePtrs, candidate)
 	}
-	if len(candidates) == 0 {
+	if len(candidatePtrs) == 0 {
 		m.mu.RUnlock()
 		return nil, nil, &Error{Code: "auth_not_found", Message: "no auth available"}
 	}
+
+	// Phase 2: Clone candidates while still under RLock (necessary for consistent snapshot)
+	// But now we only clone the filtered set, not all candidates
+	candidates := make([]*Auth, len(candidatePtrs))
+	for i, ptr := range candidatePtrs {
+		candidates[i] = ptr.Clone()
+	}
+	m.mu.RUnlock()
+
+	// Phase 3: Selector runs outside lock - OK because we have cloned data
 	selected, errPick := m.selector.Pick(ctx, provider, model, opts, candidates)
 	if errPick != nil {
-		m.mu.RUnlock()
 		return nil, nil, errPick
 	}
 	if selected == nil {
-		m.mu.RUnlock()
 		return nil, nil, &Error{Code: "auth_not_found", Message: "selector returned no auth"}
 	}
-	authCopy := selected.Clone()
-	m.mu.RUnlock()
+
+	// Phase 4: Handle index assignment (rare path)
+	authCopy := selected
 	if !selected.indexAssigned {
 		m.mu.Lock()
 		if current := m.auths[authCopy.ID]; current != nil && !current.indexAssigned {

@@ -5,7 +5,75 @@ import (
 	"github.com/nghyane/llm-mux/internal/provider"
 	"github.com/nghyane/llm-mux/internal/translator/from_ir"
 	"github.com/nghyane/llm-mux/internal/translator/ir"
+	"github.com/tidwall/gjson"
 )
+
+// EventBufferStrategy defines the interface for event buffering strategies (merged from event_buffer.go)
+type EventBufferStrategy interface {
+	Process(event *ir.UnifiedEvent) []*ir.UnifiedEvent
+	Flush() []*ir.UnifiedEvent
+}
+
+// PassthroughEventBuffer is a no-op event buffer that passes events through unchanged (merged from event_buffer.go)
+type PassthroughEventBuffer struct{}
+
+func NewPassthroughEventBuffer() *PassthroughEventBuffer {
+	return &PassthroughEventBuffer{}
+}
+
+func (b *PassthroughEventBuffer) Process(event *ir.UnifiedEvent) []*ir.UnifiedEvent {
+	return []*ir.UnifiedEvent{event}
+}
+
+func (b *PassthroughEventBuffer) Flush() []*ir.UnifiedEvent {
+	return nil
+}
+
+// StreamContext holds state for stream processing (merged from stream_state.go)
+type StreamContext struct {
+	ClaudeState          *from_ir.ClaudeStreamState
+	GeminiState          *ir.GeminiStreamParserState
+	ToolCallIndex        int
+	HasToolCalls         bool
+	FinishSent           bool
+	ReasoningCharsAccum  int
+	ToolSchemaCtx        *ir.ToolSchemaContext
+	EstimatedInputTokens int64
+}
+
+func NewStreamContext() *StreamContext {
+	return &StreamContext{
+		ClaudeState: from_ir.NewClaudeStreamState(),
+		GeminiState: ir.NewGeminiStreamParserState(),
+	}
+}
+
+func NewStreamContextWithTools(originalRequest []byte) *StreamContext {
+	ctx := NewStreamContext()
+	if len(originalRequest) > 0 {
+		tools := gjson.GetBytes(originalRequest, "tools").Array()
+		if len(tools) > 0 {
+			ctx.ToolSchemaCtx = ir.NewToolSchemaContextFromGJSON(tools)
+		}
+	}
+	return ctx
+}
+
+func (s *StreamContext) MarkFinishSent() bool {
+	if s.FinishSent {
+		return false
+	}
+	s.FinishSent = true
+	return true
+}
+
+func (s *StreamContext) AccumulateReasoning(text string) {
+	s.ReasoningCharsAccum += len(text)
+}
+
+func (s *StreamContext) EstimateReasoningTokens() int32 {
+	return int32(s.ReasoningCharsAccum / 3)
+}
 
 // StreamTranslator handles format conversion with integrated buffering
 type StreamTranslator struct {

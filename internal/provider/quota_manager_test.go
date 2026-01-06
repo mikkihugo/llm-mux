@@ -92,9 +92,11 @@ func TestQuotaManager_Pick_SelectsLeastUsed(t *testing.T) {
 	auth2 := &Auth{ID: "auth2", Provider: "antigravity"}
 	auth3 := &Auth{ID: "auth3", Provider: "antigravity"}
 
-	m.RecordRequestEnd("auth1", 300_000, false)
-	m.RecordRequestEnd("auth2", 200_000, false)
-	m.RecordRequestEnd("auth3", 100_000, false)
+	// Use significantly different usage to ensure auth3 has lowest priority
+	// Priority difference must be >= 100 to avoid random selection
+	m.RecordRequestEnd("auth1", 1_000_000, false) // Very high usage
+	m.RecordRequestEnd("auth2", 500_000, false)   // Medium usage
+	m.RecordRequestEnd("auth3", 10_000, false)    // Low usage
 
 	selected, err := m.Pick(context.Background(), "antigravity", "claude-sonnet-4", Options{ForceRotate: true}, []*Auth{auth1, auth2, auth3})
 	if err != nil {

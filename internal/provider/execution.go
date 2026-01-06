@@ -137,6 +137,7 @@ func (m *Manager) executeCountWithProvider(ctx context.Context, provider string,
 
 // ExecuteStreamWithProvider handles streaming execution for a single provider, attempting
 // multiple auth candidates until one succeeds or all are exhausted.
+// Consolidates stats tracking inline to reduce goroutine/channel overhead.
 func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string, req Request, opts Options) (<-chan StreamChunk, error) {
 	if provider == "" {
 		return nil, &Error{Code: "provider_not_found", Message: "provider identifier is empty"}
@@ -180,23 +181,35 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 			lastErr = errStream
 			continue
 		}
-		out := make(chan StreamChunk, 64) // Increased buffer for high throughput streaming
-		go func(streamCtx context.Context, streamAuth *Auth, streamProvider string, streamChunks <-chan StreamChunk, cbDone func(bool)) {
+
+		// Single output channel - consolidates previous 2 wrapper layers
+		out := make(chan StreamChunk, 128) // Unified buffer size for all stream operations
+		startTime := time.Now()
+
+		go func(streamCtx context.Context, streamAuth *Auth, streamProvider string, streamModel string, streamChunks <-chan StreamChunk, cbDone func(bool)) {
 			defer close(out)
 			var failed bool
+
 			for {
 				select {
 				case <-streamCtx.Done():
+					// Context cancelled - record stats but don't count as failure
+					m.recordProviderResult(streamProvider, streamModel, !failed, time.Since(startTime))
 					cbDone(!failed)
 					return
+
 				case chunk, ok := <-streamChunks:
 					if !ok {
+						// Stream complete
 						if !failed {
-							m.MarkResult(streamCtx, Result{AuthID: streamAuth.ID, Provider: streamProvider, Model: req.Model, Success: true})
+							m.MarkResult(streamCtx, Result{AuthID: streamAuth.ID, Provider: streamProvider, Model: streamModel, Success: true})
 						}
+						m.recordProviderResult(streamProvider, streamModel, !failed, time.Since(startTime))
 						cbDone(!failed)
 						return
 					}
+
+					// Check for errors in chunk
 					if chunk.Err != nil && !failed {
 						failed = true
 						rerr := &Error{Message: chunk.Err.Error()}
@@ -204,19 +217,23 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 						if errors.As(chunk.Err, &se) && se != nil {
 							rerr.HTTPStatus = se.StatusCode()
 						}
-						result := Result{AuthID: streamAuth.ID, Provider: streamProvider, Model: req.Model, Success: false, Error: rerr}
+						result := Result{AuthID: streamAuth.ID, Provider: streamProvider, Model: streamModel, Success: false, Error: rerr}
 						result.RetryAfter = retryAfterFromError(chunk.Err)
 						m.MarkResult(streamCtx, result)
 					}
+
+					// Forward chunk - non-blocking with context check
 					select {
 					case out <- chunk:
 					case <-streamCtx.Done():
+						m.recordProviderResult(streamProvider, streamModel, !failed, time.Since(startTime))
 						cbDone(!failed)
 						return
 					}
 				}
 			}
-		}(execCtx, auth.Clone(), provider, chunks, done)
+		}(execCtx, auth.Clone(), provider, req.Model, chunks, done)
+
 		return out, nil
 	}
 }
@@ -259,40 +276,4 @@ func (m *Manager) executeStreamProvidersOnce(ctx context.Context, providers []st
 		return nil, lastErr
 	}
 	return nil, &Error{Code: "auth_not_found", Message: "no auth available"}
-}
-
-// wrapStreamForStats wraps a stream channel to record stats when complete.
-// Uses a buffered channel and non-blocking sends to prevent goroutine leaks
-// when consumers stop reading.
-// Context cancellation (user disconnect) is not counted as provider failure.
-func (m *Manager) wrapStreamForStats(ctx context.Context, in <-chan StreamChunk, provider, model string, start time.Time) <-chan StreamChunk {
-	out := make(chan StreamChunk, 64) // Increased buffer for high throughput streaming
-	go func() {
-		defer close(out)
-		hasError := false
-		for {
-			select {
-			case <-ctx.Done():
-				// Context cancelled by client - don't count as provider failure
-				return
-			case chunk, ok := <-in:
-				if !ok {
-					// Input channel closed - stream complete
-					m.recordProviderResult(provider, model, !hasError, time.Since(start))
-					return
-				}
-				if chunk.Err != nil {
-					hasError = true
-				}
-				// Non-blocking send with context check
-				select {
-				case out <- chunk:
-				case <-ctx.Done():
-					// Context cancelled by client - don't count as provider failure
-					return
-				}
-			}
-		}
-	}()
-	return out
 }

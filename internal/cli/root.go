@@ -23,9 +23,7 @@ var rootCmd = &cobra.Command{
 	Short: "AI Gateway for subscription-based LLMs",
 	Long:  `llm-mux turns your Claude Pro, GitHub Copilot, and Gemini subscriptions into standard LLM APIs.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if handleLegacyFlags(cmd, args) {
-			return
-		}
+		// Default behavior: run serve command
 		serveCmd.Run(serveCmd, args)
 	},
 }
@@ -48,8 +46,6 @@ func init() {
 	rootCmd.AddCommand(login.LoginCmd)
 	rootCmd.AddCommand(service.ServiceCmd)
 	rootCmd.AddCommand(importcmd.ImportCmd)
-
-	initLegacyFlags()
 }
 
 func GetConfigPath() string { return cfgFile }
