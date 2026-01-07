@@ -47,27 +47,49 @@ func alias2ModelName(modelID string) string {
 
 type AntigravityExecutor struct {
 	executor.BaseExecutor
-	tokenRefresh *executor.TokenRefreshGroup
+	tokenManager *executor.TokenManager
 }
 
 func NewAntigravityExecutor(cfg *config.Config) *AntigravityExecutor {
-	return &AntigravityExecutor{
+	e := &AntigravityExecutor{
 		BaseExecutor: executor.BaseExecutor{Cfg: cfg},
-		tokenRefresh: executor.NewTokenRefreshGroup(),
 	}
+	e.tokenManager = executor.NewTokenManager(
+		executor.DefaultTokenManagerConfig(),
+		e.doRefreshToken,
+	)
+	return e
+}
+
+func (e *AntigravityExecutor) doRefreshToken(ctx context.Context, auth *provider.Auth) (string, time.Duration, error) {
+	updated, err := e.refreshToken(ctx, auth)
+	if err != nil {
+		return "", 0, err
+	}
+
+	token := executor.MetaStringValue(updated.Metadata, "access_token")
+	expiry := executor.TokenExpiry(updated.Metadata)
+	if token == "" || expiry.IsZero() {
+		return "", 0, executor.NewStatusError(http.StatusUnauthorized, "invalid token response", nil)
+	}
+
+	return token, time.Until(expiry), nil
 }
 
 func (e *AntigravityExecutor) Identifier() string { return antigravityAuthType }
 
 func (e *AntigravityExecutor) PrepareRequest(_ *http.Request, _ *provider.Auth) error { return nil }
 
+func (e *AntigravityExecutor) PreWarmToken(auth *provider.Auth) {
+	if e.tokenManager != nil {
+		e.tokenManager.PreWarm(auth)
+	}
+}
+
 func (e *AntigravityExecutor) Execute(ctx context.Context, auth *provider.Auth, req provider.Request, opts provider.Options) (resp provider.Response, err error) {
-	token, updatedAuth, errToken := e.ensureAccessToken(ctx, auth)
+	token, errToken := e.ensureAccessToken(ctx, auth)
 	if errToken != nil {
 		return resp, errToken
-	}
-	if updatedAuth != nil {
-		auth = updatedAuth
 	}
 
 	reporter := e.NewUsageReporter(ctx, e.Identifier(), req.Model, auth)
@@ -194,12 +216,9 @@ func (e *AntigravityExecutor) Execute(ctx context.Context, auth *provider.Auth, 
 func (e *AntigravityExecutor) ExecuteStream(ctx context.Context, auth *provider.Auth, req provider.Request, opts provider.Options) (streamChan <-chan provider.StreamChunk, err error) {
 	ctx = context.WithValue(ctx, executor.AltContextKey{}, "")
 
-	token, updatedAuth, errToken := e.ensureAccessToken(ctx, auth)
+	token, errToken := e.ensureAccessToken(ctx, auth)
 	if errToken != nil {
 		return nil, errToken
-	}
-	if updatedAuth != nil {
-		auth = updatedAuth
 	}
 
 	reporter := e.NewUsageReporter(ctx, e.Identifier(), req.Model, auth)
@@ -344,12 +363,9 @@ func (e *AntigravityExecutor) Refresh(ctx context.Context, auth *provider.Auth) 
 }
 
 func (e *AntigravityExecutor) CountTokens(ctx context.Context, auth *provider.Auth, req provider.Request, opts provider.Options) (provider.Response, error) {
-	token, updatedAuth, errToken := e.ensureAccessToken(ctx, auth)
+	token, errToken := e.ensureAccessToken(ctx, auth)
 	if errToken != nil {
 		return provider.Response{}, errToken
-	}
-	if updatedAuth != nil {
-		auth = updatedAuth
 	}
 
 	from := opts.SourceFormat
@@ -433,12 +449,9 @@ func (e *AntigravityExecutor) buildCountTokensRequest(ctx context.Context, token
 
 func FetchAntigravityModels(ctx context.Context, auth *provider.Auth, cfg *config.Config) []*registry.ModelInfo {
 	exec := NewAntigravityExecutor(cfg)
-	token, updatedAuth, errToken := exec.ensureAccessToken(ctx, auth)
+	token, errToken := exec.ensureAccessToken(ctx, auth)
 	if errToken != nil || token == "" {
 		return nil
-	}
-	if updatedAuth != nil {
-		auth = updatedAuth
 	}
 
 	httpClient := executor.NewProxyAwareHTTPClient(ctx, cfg, auth, 0)
@@ -456,45 +469,8 @@ func FetchAntigravityModels(ctx context.Context, auth *provider.Auth, cfg *confi
 	return FetchCloudCodeModels(ctx, httpClient, fetchCfg)
 }
 
-type tokenRefreshResult struct {
-	token string
-	auth  *provider.Auth
-}
-
-func (e *AntigravityExecutor) ensureAccessToken(ctx context.Context, auth *provider.Auth) (string, *provider.Auth, error) {
-	if auth == nil {
-		return "", nil, executor.NewStatusError(http.StatusUnauthorized, "missing auth", nil)
-	}
-
-	accessToken := executor.MetaStringValue(auth.Metadata, "access_token")
-	expiry := executor.TokenExpiry(auth.Metadata)
-	if accessToken != "" && expiry.After(time.Now().Add(executor.DefaultRefreshSkew)) {
-		return accessToken, nil, nil
-	}
-
-	result, err := e.tokenRefresh.Do(auth.ID, func(refreshCtx context.Context) (any, error) {
-		accessToken := executor.MetaStringValue(auth.Metadata, "access_token")
-		expiry := executor.TokenExpiry(auth.Metadata)
-		if accessToken != "" && expiry.After(time.Now().Add(executor.DefaultRefreshSkew)) {
-			return tokenRefreshResult{token: accessToken, auth: nil}, nil
-		}
-
-		updated, errRefresh := e.refreshToken(refreshCtx, auth.Clone())
-		if errRefresh != nil {
-			return nil, errRefresh
-		}
-		return tokenRefreshResult{
-			token: executor.MetaStringValue(updated.Metadata, "access_token"),
-			auth:  updated,
-		}, nil
-	})
-
-	if err != nil {
-		return "", nil, err
-	}
-
-	res := result.(tokenRefreshResult)
-	return res.token, res.auth, nil
+func (e *AntigravityExecutor) ensureAccessToken(ctx context.Context, auth *provider.Auth) (string, error) {
+	return e.tokenManager.GetToken(ctx, auth)
 }
 
 func (e *AntigravityExecutor) refreshToken(ctx context.Context, auth *provider.Auth) (*provider.Auth, error) {

@@ -839,6 +839,25 @@ type RequestPreparer interface {
 	PrepareRequest(req *http.Request, auth *Auth) error
 }
 
+type TokenPreWarmer interface {
+	PreWarmToken(auth *Auth)
+}
+
+func (m *Manager) PreWarmToken(auth *Auth) {
+	if auth == nil || auth.Disabled {
+		return
+	}
+	m.mu.RLock()
+	exec := m.executors[auth.Provider]
+	m.mu.RUnlock()
+	if exec == nil {
+		return
+	}
+	if pw, ok := exec.(TokenPreWarmer); ok {
+		pw.PreWarmToken(auth)
+	}
+}
+
 // InjectCredentials delegates per-provider HTTP request preparation when supported.
 // If the registered executor for the auth provider implements RequestPreparer,
 // it will be invoked to modify the request (e.g., add headers).
