@@ -79,8 +79,9 @@ type HTTPResult struct {
 }
 
 // DoRequest executes an HTTP request with standard error handling.
-// It handles request creation, common headers, timeout errors, status code checks,
-// response body decoding (gzip, brotli, zstd, deflate), and body reading.
+// Returns (result, nil) on success. For non-2xx responses, result.Error is set
+// but the function still returns (result, nil) so caller can inspect body.
+// Caller MUST check result.Error for non-2xx status codes.
 func (b *BaseExecutor) DoRequest(ctx context.Context, cfg HTTPRequestConfig) (*HTTPResult, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, cfg.Method, cfg.URL, bytes.NewReader(cfg.Body))
 	if err != nil {

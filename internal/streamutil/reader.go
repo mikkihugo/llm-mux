@@ -36,7 +36,6 @@ type OptimizedStreamReader struct {
 	ctx       context.Context
 	touch     func()
 	done      func()
-	closed    bool
 	closeOnce func()
 }
 

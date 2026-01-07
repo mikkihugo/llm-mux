@@ -842,21 +842,6 @@ func NewResponsesStreamState() *ResponsesStreamState {
 	return s
 }
 
-// formatResponsesSSE builds an SSE event returning []byte for zero-copy writes.
-func formatResponsesSSE(et string, jb []byte) []byte {
-	size := 7 + len(et) + 7 + len(jb) + 2
-	buf := ir.GetSSEChunkBuf()
-	if cap(buf) < size {
-		buf = make([]byte, 0, size)
-	}
-	buf = append(buf, "event: "...)
-	buf = append(buf, et...)
-	buf = append(buf, "\ndata: "...)
-	buf = append(buf, jb...)
-	buf = append(buf, "\n\n"...)
-	return buf
-}
-
 // ToResponsesAPIChunk converts a unified event to Responses API SSE chunks.
 // Returns [][]byte for consistency and zero-copy writes to response writer.
 func ToResponsesAPIChunk(ev ir.UnifiedEvent, model string, s *ResponsesStreamState) ([][]byte, error) {

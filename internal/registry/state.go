@@ -176,7 +176,8 @@ func (s *registryState) addToModelIDIndex(modelID, providerKey string) {
 	s.modelIDIndex[modelID] = append(s.modelIDIndex[modelID], providerKey)
 }
 
-// removeFromModelIDIndex removes a provider key from the modelID index
+// removeFromModelIDIndex removes a provider key from the modelID index.
+// Uses swap-with-last for O(1) removal. Safe because we return immediately after first match.
 func (s *registryState) removeFromModelIDIndex(modelID, providerKey string) {
 	if modelID == "" || providerKey == "" {
 		return
@@ -214,7 +215,8 @@ func (s *registryState) addToCanonicalIndex(canonicalID, provider, modelID strin
 	})
 }
 
-// removeFromCanonicalIndex removes a provider-model mapping from the canonical index
+// removeFromCanonicalIndex removes a provider-model mapping from the canonical index.
+// Uses swap-with-last for O(1) removal. Safe because we return immediately after first match.
 func (s *registryState) removeFromCanonicalIndex(canonicalID, provider, modelID string) {
 	if canonicalID == "" || provider == "" {
 		return

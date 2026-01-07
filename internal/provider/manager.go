@@ -97,8 +97,7 @@ type Manager struct {
 	mu        sync.RWMutex
 	auths     map[string]*Auth
 
-	providerCounter atomic.Uint64
-	providerStats   *ProviderStats
+	providerStats *ProviderStats
 
 	requestRetry     atomic.Int32
 	maxRetryInterval atomic.Int64

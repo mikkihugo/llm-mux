@@ -29,11 +29,6 @@ func (w *Watcher) scheduleConfigReload() {
 	})
 }
 
-func (w *Watcher) reloadConfigIfChanged() {
-	// Public entry point - just delegate to the implementation
-	w.doReloadConfigIfChanged()
-}
-
 func (w *Watcher) doReloadConfigIfChanged() {
 	// Serialize entire reload check-and-execute to prevent race conditions
 	w.configReloadMu.Lock()

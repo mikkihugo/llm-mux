@@ -206,9 +206,11 @@ func parseGeminiContent(c gjson.Result) ir.Message {
 			msg.Content = append(msg.Content, ir.ContentPart{Type: ir.ContentTypeRedactedThinking, RedactedData: data})
 		}
 
-		if inlineData := part.Get("inlineData"); !inlineData.Exists() {
+		inlineData := part.Get("inlineData")
+		if !inlineData.Exists() {
 			inlineData = part.Get("inline_data")
-		} else if inlineData.Exists() {
+		}
+		if inlineData.Exists() {
 			mimeType := inlineData.Get("mimeType").String()
 			if mimeType == "" {
 				mimeType = inlineData.Get("mime_type").String()

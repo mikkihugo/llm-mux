@@ -56,17 +56,6 @@ func respondOK(c *gin.Context, data interface{}) {
 	})
 }
 
-// respondCreated sends a 201 Created response with data envelope.
-func respondCreated(c *gin.Context, data interface{}) {
-	c.JSON(http.StatusCreated, APIResponse{
-		Data: data,
-		Meta: APIMeta{
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-			Version:   buildinfo.Version,
-		},
-	})
-}
-
 // respondError sends an error response with the given status code.
 func respondError(c *gin.Context, status int, code, message string) {
 	c.JSON(status, APIError{

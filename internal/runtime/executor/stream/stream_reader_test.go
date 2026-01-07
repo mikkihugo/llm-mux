@@ -131,7 +131,7 @@ func TestStreamReader_ActivityTracking(t *testing.T) {
 	}
 
 	// Read more data - activity should continue to be tracked
-	n, err = sr.Read(buf)
+	_, err = sr.Read(buf)
 	if err != nil && err != io.EOF {
 		t.Fatalf("Second read error: %v", err)
 	}

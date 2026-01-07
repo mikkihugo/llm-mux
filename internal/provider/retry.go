@@ -212,21 +212,6 @@ func retryAfterFromError(err error) *time.Duration {
 	return &val
 }
 
-// waitForCooldown blocks until the cooldown period expires or context is cancelled.
-func waitForCooldown(ctx context.Context, wait time.Duration) error {
-	if wait <= 0 {
-		return nil
-	}
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
-}
-
 // errCooldownTimeout is returned when waitForAvailableAuth times out waiting for an available auth.
 var errCooldownTimeout = errors.New("timeout waiting for available auth")
 

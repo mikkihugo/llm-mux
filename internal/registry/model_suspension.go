@@ -12,15 +12,17 @@ func (r *ModelRegistry) SetModelQuotaExceeded(clientID, modelID string) {
 	defer r.writerMu.Unlock()
 
 	newState := r.snapshot().clone()
-	if registration, exists := newState.models[modelID]; exists {
-		now := time.Now()
-		if registration.QuotaExceededClients == nil {
-			registration.QuotaExceededClients = make(map[string]*time.Time)
-		}
-		registration.QuotaExceededClients[clientID] = &now
-		log.Debugf("Marked model %s as quota exceeded for client %s", modelID, clientID)
+	reg := newState.findModelRegistration(modelID)
+	if reg == nil {
+		return
 	}
+	now := time.Now()
+	if reg.QuotaExceededClients == nil {
+		reg.QuotaExceededClients = make(map[string]*time.Time)
+	}
+	reg.QuotaExceededClients[clientID] = &now
 	r.state.Store(newState)
+	log.Debugf("Marked model %s as quota exceeded for client %s", modelID, clientID)
 }
 
 func (r *ModelRegistry) ClearModelQuotaExceeded(clientID, modelID string) {
@@ -28,9 +30,17 @@ func (r *ModelRegistry) ClearModelQuotaExceeded(clientID, modelID string) {
 	defer r.writerMu.Unlock()
 
 	newState := r.snapshot().clone()
-	if registration, exists := newState.models[modelID]; exists {
-		delete(registration.QuotaExceededClients, clientID)
+	reg := newState.findModelRegistration(modelID)
+	if reg == nil {
+		return
 	}
+	if reg.QuotaExceededClients == nil {
+		return
+	}
+	if _, exists := reg.QuotaExceededClients[clientID]; !exists {
+		return
+	}
+	delete(reg.QuotaExceededClients, clientID)
 	r.state.Store(newState)
 }
 
@@ -42,18 +52,18 @@ func (r *ModelRegistry) SuspendClientModel(clientID, modelID, reason string) {
 	defer r.writerMu.Unlock()
 
 	newState := r.snapshot().clone()
-	registration, exists := newState.models[modelID]
-	if !exists || registration == nil {
+	reg := newState.findModelRegistration(modelID)
+	if reg == nil {
 		return
 	}
-	if registration.SuspendedClients == nil {
-		registration.SuspendedClients = make(map[string]string)
+	if reg.SuspendedClients == nil {
+		reg.SuspendedClients = make(map[string]string)
 	}
-	if _, already := registration.SuspendedClients[clientID]; already {
+	if _, already := reg.SuspendedClients[clientID]; already {
 		return
 	}
-	registration.SuspendedClients[clientID] = reason
-	registration.LastUpdated = time.Now()
+	reg.SuspendedClients[clientID] = reason
+	reg.LastUpdated = time.Now()
 	r.state.Store(newState)
 	if reason != "" {
 		log.Debugf("Suspended client %s for model %s: %s", clientID, modelID, reason)
@@ -70,15 +80,15 @@ func (r *ModelRegistry) ResumeClientModel(clientID, modelID string) {
 	defer r.writerMu.Unlock()
 
 	newState := r.snapshot().clone()
-	registration, exists := newState.models[modelID]
-	if !exists || registration == nil || registration.SuspendedClients == nil {
+	reg := newState.findModelRegistration(modelID)
+	if reg == nil || reg.SuspendedClients == nil {
 		return
 	}
-	if _, ok := registration.SuspendedClients[clientID]; !ok {
+	if _, ok := reg.SuspendedClients[clientID]; !ok {
 		return
 	}
-	delete(registration.SuspendedClients, clientID)
-	registration.LastUpdated = time.Now()
+	delete(reg.SuspendedClients, clientID)
+	reg.LastUpdated = time.Now()
 	r.state.Store(newState)
 	log.Debugf("Resumed client %s for model %s", clientID, modelID)
 }
@@ -117,13 +127,17 @@ func (r *ModelRegistry) CleanupExpiredQuotas() {
 	quotaExpiredDuration := 5 * time.Minute
 
 	newState := r.snapshot().clone()
+	modified := false
 	for modelID, registration := range newState.models {
 		for clientID, quotaTime := range registration.QuotaExceededClients {
 			if quotaTime != nil && now.Sub(*quotaTime) >= quotaExpiredDuration {
 				delete(registration.QuotaExceededClients, clientID)
 				log.Debugf("Cleaned up expired quota tracking for model %s, client %s", modelID, clientID)
+				modified = true
 			}
 		}
 	}
-	r.state.Store(newState)
+	if modified {
+		r.state.Store(newState)
+	}
 }

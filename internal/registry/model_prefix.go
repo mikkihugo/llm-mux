@@ -83,11 +83,6 @@ func formatProviderPrefix(showPrefixes bool, modelType string) string {
 	return ""
 }
 
-func (r *ModelRegistry) convertModelToMap(model *ModelInfo, handlerType string) map[string]any {
-	s := r.snapshot()
-	return r.convertModelToMapWithState(s, model, handlerType)
-}
-
 func (r *ModelRegistry) convertModelToMapWithState(s *registryState, model *ModelInfo, handlerType string) map[string]any {
 	if model == nil {
 		return nil
