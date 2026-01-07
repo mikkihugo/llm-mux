@@ -248,6 +248,7 @@ func (s *Service) applyCoreAuthAddOrUpdate(ctx context.Context, auth *provider.A
 	auth = auth.Clone()
 	s.ensureExecutorsForAuth(auth)
 	s.registerModelsForAuth(auth)
+	s.coreManager.PreWarmToken(auth)
 	if existing, ok := s.coreManager.GetByID(auth.ID); ok && existing != nil {
 		auth.CreatedAt = existing.CreatedAt
 		auth.LastRefreshedAt = existing.LastRefreshedAt
