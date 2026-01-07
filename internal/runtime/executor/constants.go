@@ -42,7 +42,7 @@ const (
 
 const (
 	DefaultHTTPTimeout         = 60 * time.Second
-	DefaultRefreshSkew         = 3000 * time.Second
+	DefaultRefreshSkew         = 300 * time.Second
 	KiroRefreshSkew            = 5 * time.Minute
 	KiroRequestTimeout         = 120 * time.Second
 	GitHubCopilotTokenCacheTTL = 25 * time.Minute
