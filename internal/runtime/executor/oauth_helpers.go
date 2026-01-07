@@ -11,10 +11,8 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// Token refresh group (merged from token_refresh.go)
 const defaultTokenRefreshTimeout = 30 * time.Second
 
-// TokenRefreshGroup deduplicates concurrent token refresh requests using singleflight (merged from token_refresh.go)
 type TokenRefreshGroup struct {
 	sf      singleflight.Group
 	timeout time.Duration
@@ -33,9 +31,6 @@ func (g *TokenRefreshGroup) Do(key string, fn func(ctx context.Context) (any, er
 	return result, err
 }
 
-// TokenExpiry extracts the token expiration time from auth metadata.
-// It checks for "expired" (RFC3339 string) or calculates from "expires_in" + "timestamp".
-// Returns zero time if no valid expiry information is found.
 func TokenExpiry(metadata map[string]any) time.Time {
 	if metadata == nil {
 		return time.Time{}
@@ -59,8 +54,6 @@ func TokenExpiry(metadata map[string]any) time.Time {
 	return time.Time{}
 }
 
-// MetaStringValue safely retrieves a trimmed string value from metadata map.
-// Returns empty string if metadata is nil or key doesn't exist.
 func MetaStringValue(metadata map[string]any, key string) string {
 	if metadata == nil {
 		return ""
@@ -76,8 +69,6 @@ func MetaStringValue(metadata map[string]any, key string) string {
 	return ""
 }
 
-// Int64Value converts various numeric types to int64.
-// Supports int, int64, float64, json.Number, and numeric strings.
 func Int64Value(value any) (int64, bool) {
 	switch typed := value.(type) {
 	case int:
@@ -101,7 +92,6 @@ func Int64Value(value any) (int64, bool) {
 	return 0, false
 }
 
-// ResolveHost extracts host from URL string for HTTP Host header.
 func ResolveHost(base string) string {
 	parsed, errParse := url.Parse(base)
 	if errParse != nil {
@@ -113,7 +103,6 @@ func ResolveHost(base string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(base, "https://"), "http://")
 }
 
-// CloneMap creates a shallow copy of a map[string]any.
 func CloneMap(in map[string]any) map[string]any {
 	if in == nil {
 		return nil
@@ -125,7 +114,6 @@ func CloneMap(in map[string]any) map[string]any {
 	return out
 }
 
-// AttrStringValue safely retrieves a trimmed string value from attributes map.
 func AttrStringValue(attrs map[string]string, key string) string {
 	if attrs == nil {
 		return ""
