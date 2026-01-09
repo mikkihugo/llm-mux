@@ -61,13 +61,14 @@ func SetCommonHeaders(req *http.Request, contentType string) {
 
 // HTTPRequestConfig holds configuration for making HTTP requests.
 type HTTPRequestConfig struct {
-	Method      string
-	URL         string
-	Body        []byte
-	Headers     map[string]string
-	Auth        *provider.Auth
-	Timeout     time.Duration
-	ContentType string
+	Method          string
+	URL             string
+	Body            []byte
+	Headers         map[string]string
+	Auth            *provider.Auth
+	Timeout         time.Duration
+	ContentType     string
+	MaxResponseSize int64
 }
 
 // HTTPResult holds the result of an HTTP request.
@@ -118,7 +119,11 @@ func (b *BaseExecutor) DoRequest(ctx context.Context, cfg HTTPRequestConfig) (*H
 		_ = decodedBody.Close()
 	}()
 
-	data, err := io.ReadAll(decodedBody)
+	maxSize := cfg.MaxResponseSize
+	if maxSize <= 0 {
+		maxSize = DefaultMaxResponseSize
+	}
+	data, err := io.ReadAll(io.LimitReader(decodedBody, maxSize))
 	if err != nil {
 		return nil, err
 	}

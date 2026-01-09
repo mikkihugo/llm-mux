@@ -192,6 +192,16 @@ func ApplyEnvOverrides(cfg *config.Config) {
 		cfg.StreamTimeout = streamTimeout
 		log.Infof("Stream timeout overridden by env: %ds", streamTimeout)
 	}
+
+	if maxReqSize, ok := env.LookupEnvInt64("LLM_MUX_MAX_REQUEST_SIZE"); ok {
+		cfg.MaxRequestSize = maxReqSize
+		log.Infof("Max request size overridden by env: %d bytes", maxReqSize)
+	}
+
+	if maxRespSize, ok := env.LookupEnvInt64("LLM_MUX_MAX_RESPONSE_SIZE"); ok {
+		cfg.MaxResponseSize = maxRespSize
+		log.Infof("Max response size overridden by env: %d bytes", maxRespSize)
+	}
 }
 
 // autoInitConfig silently creates config on first run

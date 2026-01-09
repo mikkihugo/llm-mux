@@ -15,8 +15,9 @@ import (
 	"github.com/nghyane/llm-mux/internal/api/handlers/format/gemini"
 	"github.com/nghyane/llm-mux/internal/api/handlers/format/ollama"
 	"github.com/nghyane/llm-mux/internal/api/handlers/format/openai"
-	"github.com/nghyane/llm-mux/internal/oauth"
+	"github.com/nghyane/llm-mux/internal/api/middleware"
 	log "github.com/nghyane/llm-mux/internal/logging"
+	"github.com/nghyane/llm-mux/internal/oauth"
 )
 
 // setupRoutes configures the API routes for the server.
@@ -31,6 +32,7 @@ func (s *Server) setupRoutes() {
 
 	// OpenAI compatible API routes
 	v1 := s.engine.Group("/v1")
+	v1.Use(middleware.RequestSizeLimitMiddleware(s.cfg.MaxRequestSize))
 	v1.Use(s.conditionalAuthMiddleware())
 	{
 		v1.GET("/models", s.unifiedModelsHandler(openaiHandlers, claudeCodeHandlers))
@@ -43,6 +45,7 @@ func (s *Server) setupRoutes() {
 
 	// Gemini compatible API routes
 	v1beta := s.engine.Group("/v1beta")
+	v1beta.Use(middleware.RequestSizeLimitMiddleware(s.cfg.MaxRequestSize))
 	v1beta.Use(s.conditionalAuthMiddleware())
 	{
 		v1beta.GET("/models", geminiHandlers.GeminiModels)
@@ -70,6 +73,7 @@ func (s *Server) setupRoutes() {
 
 	// Handle other Ollama endpoints (with optional auth - can work without API key)
 	apiGroup := s.engine.Group("/api")
+	apiGroup.Use(middleware.RequestSizeLimitMiddleware(s.cfg.MaxRequestSize))
 	{
 		apiGroup.GET("/tags", ollamaHandlers.Tags)
 		apiGroup.POST("/chat", ollamaHandlers.Chat)
@@ -79,6 +83,7 @@ func (s *Server) setupRoutes() {
 
 	// Also support /ollama/api/* paths
 	ollamaGroup := s.engine.Group("/ollama/api")
+	ollamaGroup.Use(middleware.RequestSizeLimitMiddleware(s.cfg.MaxRequestSize))
 	{
 		ollamaGroup.GET("/tags", ollamaHandlers.Tags)
 		ollamaGroup.POST("/chat", ollamaHandlers.Chat)

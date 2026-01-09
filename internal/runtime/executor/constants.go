@@ -12,6 +12,10 @@ const DefaultScannerBufferSize = 64 * 1024
 // The watchdog checks periodically (every 30s max), so this won't affect normal operation.
 const DefaultStreamIdleTimeout = 5 * time.Minute
 
+// DefaultMaxResponseSize is the maximum response body size to read into memory.
+// Used with io.LimitReader to prevent OOM from unexpectedly large responses.
+const DefaultMaxResponseSize = 100 * 1024 * 1024 // 100MB
+
 const (
 	DefaultClaudeUserAgent      = "claude-cli/1.0.83 (external, cli)"
 	DefaultCodexUserAgent       = "codex_cli_rs/1.104.1 (Mac OS 26.0.1; arm64) Apple_Terminal/464"

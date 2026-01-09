@@ -26,9 +26,8 @@ type UsageReporter interface {
 	EnsurePublished(ctx context.Context)
 }
 
-// Constants for stream processing
 const (
-	DefaultStreamBufferSize  = 512 * 1024 // 512KB - sufficient for SSE chunks
+	DefaultStreamBufferSize  = 2 * 1024 * 1024
 	DefaultScannerBufferSize = 64 * 1024
 	DefaultStreamIdleTimeout = 5 * time.Minute
 )

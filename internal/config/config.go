@@ -132,6 +132,15 @@ type Config struct {
 
 	// UseCanonicalTranslator enables the unified IR translator architecture (default: true).
 	UseCanonicalTranslator bool `yaml:"use-canonical-translator" json:"use-canonical-translator" default:"true"`
+
+	// MaxRequestSize is the maximum allowed request body size in bytes.
+	// Set to 0 to use the default (50MB). This protects against DoS/OOM attacks
+	// from oversized payloads while accommodating multi-modal requests with images.
+	MaxRequestSize int64 `yaml:"max-request-size" json:"max-request-size"`
+
+	// MaxResponseSize is the maximum response body size to read into memory in bytes.
+	// Set to 0 to use the default (100MB). Applies to non-streaming responses only.
+	MaxResponseSize int64 `yaml:"max-response-size" json:"max-response-size"`
 }
 
 // TLSConfig holds HTTPS server settings.
@@ -280,6 +289,8 @@ func NewDefaultConfig() *Config {
 		StreamTimeout:          600, // 10 minutes for large context processing
 		QuotaWindow:            300,
 		UseCanonicalTranslator: true,
+		MaxRequestSize:         50 * 1024 * 1024,  // 50MB
+		MaxResponseSize:        100 * 1024 * 1024, // 100MB
 		Usage: UsageConfig{
 			DSN:           "", // Disabled by default, user must opt-in
 			BatchSize:     100,

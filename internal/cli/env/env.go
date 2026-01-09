@@ -45,3 +45,15 @@ func LookupEnvBool(keys ...string) (bool, bool) {
 	}
 	return false, false
 }
+
+// LookupEnvInt64 searches for environment variables by the given keys and
+// attempts to parse the value as a 64-bit integer. Returns the parsed value
+// and true if successful, or 0 and false if no valid integer is found.
+func LookupEnvInt64(keys ...string) (int64, bool) {
+	if value, ok := LookupEnv(keys...); ok {
+		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
