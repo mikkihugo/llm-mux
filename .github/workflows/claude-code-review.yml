@@ -33,11 +33,18 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: PR Review with Progress Tracking
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
-          github_token: ${{ secrets.REPOBOTS_PAT || secrets.GITHUB_TOKEN }}
+          github_token: ${{ steps.app-token.outputs.token }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show_full_output: true  # Enable verbose logging
 
@@ -67,7 +74,7 @@ jobs:
       - name: Create Formal GitHub Review
         if: always()  # Run even if Claude fails
         env:
-          GITHUB_TOKEN: ${{ secrets.REPOBOTS_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           # Check if Claude review succeeded
           if [ "${{ steps.claude-review.outcome }}" == "success" ]; then
@@ -75,7 +82,7 @@ jobs:
             CUTOFF_TIME=$(date -u -d '5 minutes ago' +"%Y-%m-%dT%H:%M:%SZ")
 
             REVIEW_BODY=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
-              --jq "[.[] | select(.created_at > \"$CUTOFF_TIME\" and .user.login == \"${{ github.actor }}\")]  | sort_by(.created_at) | .[-1].body // \"\"")
+              --jq "[.[] | select(.created_at > \"$CUTOFF_TIME\" and (.user.login | contains(\"[bot]\")))]  | sort_by(.created_at) | .[-1].body // \"\"")
 
             # Extract score from "CLAUDE_SCORE: X" format
             SCORE=$(echo "$REVIEW_BODY" | grep -oP '(?<=CLAUDE_SCORE: )\d+' || echo "0")
