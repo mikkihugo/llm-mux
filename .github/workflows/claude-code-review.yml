@@ -19,7 +19,7 @@ jobs:
     #   github.event.pull_request.user.login == 'new-developer' ||
     #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
 
-    runs-on: [self-hosted, Linux, nix]
+    runs-on: [self-hosted, linux, nix]
     permissions:
       contents: read
       pull-requests: write  # Required for review comments and approvals
@@ -55,6 +55,15 @@ jobs:
 
             Provide inline comments on specific issues and a summary.
 
+            **IMPORTANT:** End your review with this exact format on a new line:
+            CLAUDE_SCORE: X
+
+            Where X is a number 0-100:
+            - 95-100: Excellent, approve immediately
+            - 70-94: Good, minor fixes needed
+            - 50-69: Needs work, moderate issues
+            - Below 50: Significant issues, request changes
+
       - name: Create Formal GitHub Review
         if: always()  # Run even if Claude fails
         env:
@@ -62,32 +71,44 @@ jobs:
         run: |
           # Check if Claude review succeeded
           if [ "${{ steps.claude-review.outcome }}" == "success" ]; then
-            # Get Claude's latest comment (posted by the workflow actor)
+            # Get Claude's review comment with score
             CUTOFF_TIME=$(date -u -d '5 minutes ago' +"%Y-%m-%dT%H:%M:%SZ")
 
-            # Check both inline comments AND issue comments for Claude's feedback
-            INLINE_COUNT=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-              --jq --arg cutoff "$CUTOFF_TIME" '[.[] | select(.created_at > $cutoff and .user.login == "${{ github.actor }}") ] | length')
+            REVIEW_BODY=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+              --jq "[.[] | select(.created_at > \"$CUTOFF_TIME\" and .user.login == \"${{ github.actor }}\")]  | sort_by(.created_at) | .[-1].body // \"\"")
 
-            ISSUE_COMMENTS=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
-              --jq --arg cutoff "$CUTOFF_TIME" '[.[] | select(.created_at > $cutoff and .user.login == "${{ github.actor }}" and (.body | contains("Critical") or contains("issue") or contains("problem")))] | length')
+            # Extract score from "CLAUDE_SCORE: X" format
+            SCORE=$(echo "$REVIEW_BODY" | grep -oP '(?<=CLAUDE_SCORE: )\d+' || echo "0")
 
-            TOTAL_COMMENTS=$((INLINE_COUNT + ISSUE_COMMENTS))
+            echo "📊 Claude Review Score: $SCORE/100"
 
-            if [ "$TOTAL_COMMENTS" -gt 0 ]; then
-              # Claude found issues - post COMMENT review (not approve)
-              gh pr review ${{ github.event.pull_request.number }} \
-                --comment \
-                --body "✅ Claude Code Review completed. Please review the feedback above before merging."
+            if [ "$SCORE" -ge 95 ]; then
+              # Excellent score - APPROVE
+              gh pr review ${{ github.event.pull_request.number }} --approve --body "✅ **Claude Code Review: Approved** (Score: $SCORE/100)
+
+          Excellent code quality! Ready to merge."
+            elif [ "$SCORE" -ge 70 ]; then
+              # Good score but minor issues - COMMENT
+              gh pr review ${{ github.event.pull_request.number }} --comment --body "✅ **Claude Code Review: Needs Minor Fixes** (Score: $SCORE/100)
+
+          Please review Claude's feedback above and address minor issues before merging."
+            elif [ "$SCORE" -gt 0 ]; then
+              # Low score - REQUEST CHANGES (or COMMENT if we're the PR author)
+              if gh pr review ${{ github.event.pull_request.number }} --request-changes --body "⚠️ **Claude Code Review: Changes Required** (Score: $SCORE/100)
+
+          Significant issues found. Please address Claude's feedback before merging." 2>&1 | grep -q "Can not request changes on your own pull request"; then
+                # Fallback to comment if we can't request changes (e.g., we're the PR author)
+                gh pr review ${{ github.event.pull_request.number }} --comment --body "⚠️ **Claude Code Review: Changes Required** (Score: $SCORE/100)
+
+          Significant issues found. Please address Claude's feedback before merging."
+              fi
             else
-              # No issues found - APPROVE
-              gh pr review ${{ github.event.pull_request.number }} \
-                --approve \
-                --body "✅ Claude Code Review: No issues found. Code looks good!"
+              # No score found - fallback to comment
+              gh pr review ${{ github.event.pull_request.number }} --comment --body "✅ **Claude Code Review: Completed**
+
+          Review completed. Please check Claude's feedback above."
             fi
           else
             # Claude review failed
-            gh pr review ${{ github.event.pull_request.number }} \
-              --comment \
-              --body "⚠️ Claude Code Review encountered an error. Please check the workflow logs."
+            gh pr review ${{ github.event.pull_request.number }} --comment --body "⚠️ Claude Code Review encountered an error. Please check the workflow logs."
           fi
