@@ -1,0 +1,92 @@
+---
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+    # Optional: Only run on specific file changes
+    # paths:
+    #   - "src/**/*.ts"
+    #   - "src/**/*.tsx"
+    #   - "src/**/*.js"
+    #   - "src/**/*.jsx"
+
+jobs:
+  claude-review:
+    # Optional: Filter by PR author
+    # if: |
+    #   github.event.pull_request.user.login == 'external-contributor' ||
+    #   github.event.pull_request.user.login == 'new-developer' ||
+    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+
+    runs-on: [self-hosted, Linux, nix]
+    permissions:
+      contents: read
+      pull-requests: write  # Required for review comments and approvals
+      issues: write         # Required for issue comments
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: PR Review with Progress Tracking
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ secrets.REPOBOTS_PAT || secrets.GITHUB_TOKEN }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Enable progress tracking
+          track_progress: true
+
+          # Custom review instructions
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Perform a comprehensive code review focusing on:
+
+            1. **Code Quality** - Clean code principles, error handling, readability
+            2. **Security** - Vulnerabilities, input sanitization, auth logic
+            3. **Performance** - Bottlenecks, database queries, memory leaks
+            4. **Testing** - Test coverage, edge cases, missing scenarios
+            5. **Documentation** - Code comments, README updates, API docs
+
+            Provide detailed feedback using inline comments for specific issues.
+            Use top-level comments for general observations.
+
+          # Tools for comprehensive PR review
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+
+      - name: Create Formal GitHub Review
+        if: always()  # Run even if Claude fails
+        env:
+          GH_TOKEN: ${{ secrets.REPOBOTS_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if Claude review succeeded
+          if [ "${{ steps.claude-review.outcome }}" == "success" ]; then
+            # Count inline comments Claude posted (approximate - check last 5 minutes)
+            COMMENT_COUNT=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+              --jq '[.[] | select(.created_at > (now - 300 | strftime("%Y-%m-%dT%H:%M:%SZ")))] | length')
+
+            if [ "$COMMENT_COUNT" -gt 0 ]; then
+              # Claude found issues - post COMMENT review
+              gh pr review ${{ github.event.pull_request.number }} \
+                --comment \
+                --body "✅ Claude Code Review completed with $COMMENT_COUNT inline comment(s). Please address the feedback above."
+            else
+              # No issues found - APPROVE
+              gh pr review ${{ github.event.pull_request.number }} \
+                --approve \
+                --body "✅ Claude Code Review: No issues found. Code looks good!"
+            fi
+          else
+            # Claude review failed
+            gh pr review ${{ github.event.pull_request.number }} \
+              --comment \
+              --body "⚠️ Claude Code Review encountered an error. Please check the workflow logs."
+          fi
