@@ -58,19 +58,27 @@ jobs:
       - name: Create Formal GitHub Review
         if: always()  # Run even if Claude fails
         env:
-          GH_TOKEN: ${{ secrets.REPOBOTS_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.REPOBOTS_PAT || secrets.GITHUB_TOKEN }}
         run: |
           # Check if Claude review succeeded
           if [ "${{ steps.claude-review.outcome }}" == "success" ]; then
-            # Count inline comments Claude posted (approximate - check last 5 minutes)
-            COMMENT_COUNT=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-              --jq '[.[] | select(.created_at > (now - 300 | strftime("%Y-%m-%dT%H:%M:%SZ")))] | length')
+            # Get Claude's latest comment (posted by the workflow actor)
+            CUTOFF_TIME=$(date -u -d '5 minutes ago' +"%Y-%m-%dT%H:%M:%SZ")
 
-            if [ "$COMMENT_COUNT" -gt 0 ]; then
-              # Claude found issues - post COMMENT review
+            # Check both inline comments AND issue comments for Claude's feedback
+            INLINE_COUNT=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+              --jq --arg cutoff "$CUTOFF_TIME" '[.[] | select(.created_at > $cutoff and .user.login == "${{ github.actor }}") ] | length')
+
+            ISSUE_COMMENTS=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments \
+              --jq --arg cutoff "$CUTOFF_TIME" '[.[] | select(.created_at > $cutoff and .user.login == "${{ github.actor }}" and (.body | contains("Critical") or contains("issue") or contains("problem")))] | length')
+
+            TOTAL_COMMENTS=$((INLINE_COUNT + ISSUE_COMMENTS))
+
+            if [ "$TOTAL_COMMENTS" -gt 0 ]; then
+              # Claude found issues - post COMMENT review (not approve)
               gh pr review ${{ github.event.pull_request.number }} \
                 --comment \
-                --body "✅ Claude Code Review completed with $COMMENT_COUNT inline comment(s). Please address the feedback above."
+                --body "✅ Claude Code Review completed. Please review the feedback above before merging."
             else
               # No issues found - APPROVE
               gh pr review ${{ github.event.pull_request.number }} \
