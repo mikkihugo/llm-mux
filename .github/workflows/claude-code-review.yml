@@ -83,10 +83,17 @@ jobs:
             echo "📊 Claude Review Score: $SCORE/100"
 
             if [ "$SCORE" -ge 95 ]; then
-              # Excellent score - APPROVE
-              gh pr review ${{ github.event.pull_request.number }} --approve --body "✅ **Claude Code Review: Approved** (Score: $SCORE/100)
+              # Excellent score - APPROVE (or COMMENT if we're the PR author)
+              APPROVE_OUTPUT=$(gh pr review ${{ github.event.pull_request.number }} --approve --body "✅ **Claude Code Review: Approved** (Score: $SCORE/100)
 
-          Excellent code quality! Ready to merge."
+          Excellent code quality! Ready to merge." 2>&1 || true)
+
+              if echo "$APPROVE_OUTPUT" | grep -q "Can not approve your own pull request"; then
+                # Fallback to comment if we can't approve (e.g., we're the PR author)
+                gh pr review ${{ github.event.pull_request.number }} --comment --body "✅ **Claude Code Review: Approved** (Score: $SCORE/100)
+
+          Excellent code quality! Ready to merge. (Note: Cannot formally approve own PR)"
+              fi
             elif [ "$SCORE" -ge 70 ]; then
               # Good score but minor issues - COMMENT
               gh pr review ${{ github.event.pull_request.number }} --comment --body "✅ **Claude Code Review: Needs Minor Fixes** (Score: $SCORE/100)
